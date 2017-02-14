@@ -38,7 +38,7 @@ uint8_t bin2bcd_uint8(uint8_t bin_value) {
 void ds1307_build_date(char *buff, int year, int month, int day, int hour, int minute, int second) {
 
 	/* seconds (0 to 59) */
-	buff[0x00] = 0b10000000 | bin2bcd_uint8(second); /* enable oscillator and BCD seconds */
+	buff[0x00] = bin2bcd_uint8(second) & 0b01111111; /* enable oscillator and BCD seconds */
 
 	/* minutes (0 to 59) */
 	buff[0x01] = bin2bcd_uint8(minute);
@@ -265,8 +265,9 @@ int main(int argc, char **argv) {
 		/* txBuffer should now be filled with address of clock register and 8 bytes of clock data. Now we can write. */
 
 		opResult = write(i2cHandle, txBuffer, 9);
-		if (opResult != 1) {
-			printf("No ACK bit!\n");
+		if (opResult != 9) {
+			fprintf(stderr,"# Error writing date. write() returned %d instead of 9. Exiting...\n",opResult);
+			exit(2);
 		}
 	}
 
