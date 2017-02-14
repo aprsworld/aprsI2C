@@ -26,9 +26,18 @@ switch|argument|description
 --i2c-device|device|`/dev/` entry for I2C-dev device
 --i2c-address|chip address|hex address of chip
 
+Example: Set RTC time to system time:
+```
+./rtc_ds1307 --set "`date +"%Y-%m-%d %k:%M:%S"`"
+```
+Example: Set system time to RTC time:
+```
+date --set "`./rtc_ds1307 --read 2>/dev/null`"
+```
 
-#### DS1307
-RTC with 56 bytes of general purpose battery back RAM. 
+
+### DS1307 (rtc/rtc_ds1307.c)
+RTC with 56 bytes of general purpose battery backed RAM. 
 
 In addition to required arguments / operations, it alow supports
 
@@ -37,6 +46,7 @@ switch|argument|description
 --ram-read|(none)|read contents of RAM bytes and print to stdout
 --ram-set|string|write string to RAM
 --dump|(none)|dump all 64 bytes of RTC and RAM to stdout
+
 
 
 
