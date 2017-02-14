@@ -13,17 +13,6 @@
 extern char *optarg;
 extern int optind, opterr, optopt;
 
-/* 
-Date format used is ISO 8601 style:
-yyyy-MM-dd HH:mm:ss
-
-
-Unix date command to print in this format:
-date +"%Y-%m-%d %k:%M:%S"
-
-Unix date command to set in this format:
-date --set "2017-02-14 17:27:09"
-*/
 
 /* byte BCD decoder */
 uint8_t bcd2bin_uint8(uint8_t bcd_value) {
@@ -122,9 +111,9 @@ int main(int argc, char **argv) {
 	int i2cAddress; 	/* chip address */
 
 
-	char rxBuffer[64];	// receive buffer
-	char txBuffer[64+1];	// transmit buffer (extra byte is address byte)
-	int opResult = 0;	 // for error checking of operations
+	char rxBuffer[64];	/* receive buffer */
+	char txBuffer[64+1];	/* transmit buffer (extra byte is address byte) */
+	int opResult = 0;	/* for error checking of operations */
 
 	/* RTC stuff */
 	int i;
@@ -134,8 +123,8 @@ int main(int argc, char **argv) {
 	fprintf(stderr,"# rtc_ds1307 DS1307 Real Time Clock I2C utility\n");
 
 	/* defaults and command line arguments */
-	ramSetBuffer[0]='\0';
-	dateSetBuffer[0]='\0';
+	memset(ramSetBuffer, 0, sizeof(ramSetBuffer));
+	memset(dateSetBuffer, 0, sizeof(dateSetBuffer));
 	ramRead=dateRead=dumpRead=0;
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	i2cAddress=0x68; 		/* DS1307 is always hard-coded to 0x68 */
@@ -146,11 +135,11 @@ int main(int argc, char **argv) {
 		static struct option long_options[] = {
 			{"read",        no_argument,       0, 'r' },
 		        {"ram-read",    no_argument,       0, 'R' },
-		        {"set",         required_argument, 0, 's' }, /* implemented */
-		        {"ram-set",     required_argument, 0, 'S' }, /* implemented */
+		        {"set",         required_argument, 0, 's' }, 
+		        {"ram-set",     required_argument, 0, 'S' },
 		        {"dump",        no_argument,       0, 'd' },
-		        {"i2c-device",  required_argument, 0, 'i' }, /* implemented */
-		        {"i2c-address", required_argument, 0, 'a' }, /* implemented */
+		        {"i2c-device",  required_argument, 0, 'i' },
+		        {"i2c-address", required_argument, 0, 'a' },
 		        {0,          0,                 0,  0 }
 		};
 
@@ -187,21 +176,9 @@ int main(int argc, char **argv) {
 		}
 	}
 
-
-	if (optind < argc) {
-		printf("non-option ARGV-elements: \n");
-		while (optind < argc)
-			printf("[%d] %s\n", optind,argv[optind++]);
-		printf("\n");
-	}
-
-	/* start verbosity */
+	/* start-up verbosity */
 	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
 	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
-	if ( strlen(ramSetBuffer) )
-		fprintf(stderr,"# writing up to 56 bytes of '%s' (padded with \\0 if less than 56 bytes) to RAM\n",ramSetBuffer);
-	if ( strlen(dateSetBuffer) )
-		fprintf(stderr,"# Attempting to set date with '%s'\n",dateSetBuffer);
 
 
 
@@ -220,7 +197,41 @@ int main(int argc, char **argv) {
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
 
-	/* do any requested reading */
+	/* do sets first */
+	if ( strlen(dateSetBuffer) ) {
+		fprintf(stderr,"# Attempting to set date with '%s'\n",dateSetBuffer);
+
+		if ( 0 != ds1307_build_date_from_string(dateSetBuffer, txBuffer+1) ) {
+			fprintf(stderr,"# invalid date format or value. Exiting...\n");
+			exit(3);
+		}
+
+		txBuffer[0]=0x00; /* address of clock registers */
+		/* txBuffer should now be filled with address of clock register and 8 bytes of clock data. Now we can write. */
+
+		opResult = write(i2cHandle, txBuffer, 9);
+		if (opResult != 9) {
+			fprintf(stderr,"# Error writing date. write() returned %d instead of 9. Exiting...\n",opResult);
+			exit(2);
+		}
+	}
+
+	if ( strlen(ramSetBuffer) ) {
+		fprintf(stderr,"# writing up to 56 bytes of '%s' (padded with \\0 if less than 56 bytes) to RAM\n",ramSetBuffer);
+
+		txBuffer[0]=0x08; /* address of clock registers */
+		memcpy(txBuffer+1,ramSetBuffer,56);
+		/* txBuffer should now be filled with address of first RAM register and 56 bytes of ram data. Now we can write. */
+
+		opResult = write(i2cHandle, txBuffer, 57);
+		if (opResult != 57) {
+			fprintf(stderr,"# Error writing RAM data. write() returned %d instead of 57. Exiting...\n",opResult);
+			exit(2);
+		}
+	}
+
+
+	/* do any requested reading after sets */
 	if ( dateRead || ramRead || dumpRead ) {
 
 		/* address to read from */
@@ -243,7 +254,7 @@ int main(int argc, char **argv) {
 			printf("%s\n",txBuffer);
 		} else if ( ramRead ) {
 			fprintf(stderr,"# RAM read from DS1307 RTC\n");
-			for ( i=8 ; i<64 ; i++ ) {
+			for ( i=8 ; i<64 && rxBuffer[i] != '\0' ; i++ ) {
 				putchar(rxBuffer[i]);
 			}
 		} else if ( dumpRead) {
@@ -253,51 +264,6 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-
-	if ( strlen(dateSetBuffer) ) {
-		txBuffer[0]=0x00; /* address of clock registers */
-
-		if ( 0 != ds1307_build_date_from_string(dateSetBuffer, txBuffer+1) ) {
-			fprintf(stderr,"# invalid date format or value. Exiting...\n");
-			exit(3);
-		}
-
-		/* txBuffer should now be filled with address of clock register and 8 bytes of clock data. Now we can write. */
-
-		opResult = write(i2cHandle, txBuffer, 9);
-		if (opResult != 9) {
-			fprintf(stderr,"# Error writing date. write() returned %d instead of 9. Exiting...\n",opResult);
-			exit(2);
-		}
-	}
-
-#if 0
-	/* write a string to scratch RAM */
-	memset(txBuffer,'\0',sizeof(txBuffer));
-	/* first byte will be replaced by address to write to */
-//	strcpy(txBuffer," hello, DS1307 RAM");
-
-	ds1307_date_to_str(rxBuffer, txBuffer+1, sizeof(txBuffer)-1 );
-
-	/* address to write to */
-	txBuffer[0] = 0x08; 
-	/* dump */
-	for ( i=0 ; i<sizeof(txBuffer) ; i++ ) {
-		printf("# txBuffer[%-2d]=0x%02X ",i,txBuffer[i],txBuffer[i]);
-		if ( txBuffer[i] >= 32 && txBuffer[i] <= 127 ) {
-			printf("(%c) ",txBuffer[i]);
-		} else {
-			printf("(non-printable) ");
-		}
-		printf("\n");
-	}
-
-	/* write 56 bytes to it */
-	opResult = write(i2cHandle, txBuffer, 56);
-	if (opResult != 1) 
-		printf("No ACK bit!\n");
-#endif
-
 	if ( -1 == close(i2cHandle) ) {
 		fprintf(stderr,"# Error closing I2C device.\n# %s\n# Exiting...\n",strerror(errno));
 		exit(1);
@@ -306,6 +272,5 @@ int main(int argc, char **argv) {
 	fprintf(stderr,"# Done...\n");
 	
 	exit(0);
-
 }
 

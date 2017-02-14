@@ -7,6 +7,7 @@ Utilities for communicating with various I2C devices APRS World uses on our boar
 Communications through the Linux kernel i2c-dev module. Documentation at:
 https://www.kernel.org/doc/Documentation/i2c/dev-interface
 
+Utilities are, by default, verbose. All debugging output is sent to stderr. To not get these message, stderr can re-directed to `/dev/null` using `2>/dev/null`. Or to combine stderr and stdout use `2>&1` in bash.
 
 ## RTC (Real Time Clock)
 
@@ -26,11 +27,11 @@ switch|argument|description
 --i2c-device|device|`/dev/` entry for I2C-dev device
 --i2c-address|chip address|hex address of chip
 
-Example: Set RTC time to system time:
+#### Example: Set RTC time to system time
 ```
 ./rtc_ds1307 --set "`date +"%Y-%m-%d %k:%M:%S"`"
 ```
-Example: Set system time to RTC time:
+#### Example: Set system time to RTC time
 ```
 date --set "`./rtc_ds1307 --read 2>/dev/null`"
 ```
@@ -39,11 +40,11 @@ date --set "`./rtc_ds1307 --read 2>/dev/null`"
 ### DS1307 (rtc/rtc_ds1307.c)
 RTC with 56 bytes of general purpose battery backed RAM. 
 
-In addition to required arguments / operations, it alow supports
+In addition to required arguments / operations, it also supports
 
 switch|argument|description
 ---|---|---
---ram-read|(none)|read contents of RAM bytes and print to stdout
+--ram-read|(none)|read contents of RAM bytes and print to stdout. Stop at first '\0'
 --ram-set|string|write string to RAM
 --dump|(none)|dump all 64 bytes of RTC and RAM to stdout
 
