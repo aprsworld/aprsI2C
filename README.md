@@ -31,6 +31,7 @@ switch|argument|description
 RTC with 56 bytes of general purpose battery back RAM. 
 
 In addition to required arguments / operations, it alow supports
+
 switch|argument|description
 ---|---|---
 --ram-read|(none)|read contents of RAM bytes and print to stdout
