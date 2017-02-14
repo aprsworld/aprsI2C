@@ -28,6 +28,14 @@ switch|argument|description
 
 
 #### DS1307
+RTC with 56 bytes of general purpose battery back RAM. 
+
+In addition to required arguments / operations, it alow supports
+switch|argument|description
+---|---|---
+--ram-read|(none)|read contents of RAM bytes and print to stdout
+--ram-set|string|write string to RAM
+--dump|(none)|dump all 64 bytes of RTC and RAM to stdout
 
 
 
