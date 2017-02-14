@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <getopt.h>
+#include <errno.h>
 
 extern char *optarg;
 extern int optind, opterr, optopt;
@@ -61,14 +63,34 @@ void ds1307_build_date(char *buff, int year, int month, int day, int hour, int m
 	buff[0x07] = 0x00; /* output state is low, square wave is not enabled */
 }
 
-void ds1307_built_date_from_string(char *iso8601, char *ds1307) {
+int ds1307_build_date_from_string(char *iso8601, char *ds1307) {
 	int year, month, day, hour, minute, second;
+	int scanned;
 
 	/* break ISO8601 format into components */
-	sscanf(iso8601,"%d-%d-%d %d:%d:%d",&year,&month,&day,&hour,&minute,&second);
+	scanned=sscanf(iso8601,"%d-%d-%d %d:%d:%d",&year,&month,&day,&hour,&minute,&second);
+
+	/* range check date components */
+	if ( month<1 || month>12 )
+		return -1;
+	if ( day<1 || day>31 )
+		return -2;
+	if ( hour<0 || hour>23 )
+		return -3;
+	if ( minute<0 || minute>59 )
+		return -4;
+	if ( second<0 || second>59 ) 
+		return -5;
+
+	if ( 6 != scanned ) {
+//		fprintf(stderr,"# sscanf error while reading ISO 8601 like date. %s. Aborting setting date.\n",strerror(errno));
+		return scanned;
+	}
 
 	/* pass to DS1307 encoder */
 	ds1307_build_date(ds1307,year,month,day,hour,minute,second);
+
+	return 0;
 }
 
 /* DS1307 registers 0 to 6, string to put YYYY-MM-DD HH:MM:SS result in, max length of result */
@@ -85,49 +107,170 @@ void ds1307_date_to_str(char *ds1307, char *s, int len) {
 	snprintf(s,len,"%04d-%02d-%02d %02d:%02d:%02d",year,month,day,hour,minute,second);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+	/* optarg */
+	int c;
+	int digit_optind = 0;
+
+	/* program flow */
+	char ramSetBuffer[57];
+	char dateSetBuffer[20]; 
+	int ramRead, dateRead, dumpRead; 
+
 	/* I2C stuff */
+	char i2cDevice[64];	/* I2C device name */
+	int i2cAddress; 	/* chip address */
+
+
 	char rxBuffer[64];	// receive buffer
 	char txBuffer[64+1];	// transmit buffer (extra byte is address byte)
-	int ds1307Addresss = 0x68; // I2C device address
 	int opResult = 0;	 // for error checking of operations
 
 	/* RTC stuff */
 	int i;
 	int seconds, minutes, hours, day, month, year;
 
+
+	fprintf(stderr,"# rtc_ds1307 DS1307 Real Time Clock I2C utility\n");
+
+	/* defaults and command line arguments */
+	ramSetBuffer[0]='\0';
+	dateSetBuffer[0]='\0';
+	ramRead=dateRead=dumpRead=0;
+	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
+	i2cAddress=0x68; 		/* DS1307 is always hard-coded to 0x68 */
+
+	while (1) {
+		int this_option_optind = optind ? optind : 1;
+		int option_index = 0;
+		static struct option long_options[] = {
+			{"read",        no_argument,       0, 'r' },
+		        {"ram-read",    no_argument,       0, 'R' },
+		        {"set",         required_argument, 0, 's' }, /* implemented */
+		        {"ram-set",     required_argument, 0, 'S' }, /* implemented */
+		        {"dump",        no_argument,       0, 'd' },
+		        {"i2c-device",  required_argument, 0, 'i' }, /* implemented */
+		        {"i2c-address", required_argument, 0, 'a' }, /* implemented */
+		        {0,          0,                 0,  0 }
+		};
+
+		c = getopt_long(argc, argv, "", long_options, &option_index);
+
+		if (c == -1)
+			break;
+
+		switch (c) {
+			case 'a':
+				sscanf(optarg,"%x",&i2cAddress);
+				break;
+			case 'i':
+				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
+				i2cDevice[sizeof(i2cDevice)-1]='\0';
+				break;
+			case 'S':
+				strncpy(ramSetBuffer,optarg,sizeof(ramSetBuffer)-1);
+				ramSetBuffer[sizeof(ramSetBuffer)-1]='\0';
+				break;
+			case 's':
+				strncpy(dateSetBuffer,optarg,sizeof(dateSetBuffer)-1);
+				dateSetBuffer[sizeof(dateSetBuffer)-1]='\0';
+				break;
+			case 'd':
+				dumpRead=1;
+				break;
+			case 'R':
+				ramRead=1;
+				break;
+			case 'r':
+				dateRead=1;
+				break;
+		}
+	}
+
+
+	if (optind < argc) {
+		printf("non-option ARGV-elements: \n");
+		while (optind < argc)
+			printf("[%d] %s\n", optind,argv[optind++]);
+		printf("\n");
+	}
+
+	/* start verbosity */
+	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
+	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
+	if ( strlen(ramSetBuffer) )
+		fprintf(stderr,"# writing up to 56 bytes of '%s' (padded with \\0 if less than 56 bytes) to RAM\n",ramSetBuffer);
+	if ( strlen(dateSetBuffer) )
+		fprintf(stderr,"# Attempting to set date with '%s'\n",dateSetBuffer);
+
+
+
 	/* Open I2C bus */
-	int i2cHandle = open("/dev/i2c-1", O_RDWR);
+	int i2cHandle = open(i2cDevice, O_RDWR);
+
+	if ( -1 == i2cHandle ) {
+		fprintf(stderr,"# Error opening I2C device.\n# %s\n# Exiting...\n",strerror(errno));
+		exit(1);
+	}
 
 	/* not using 10 bit addresses */
 	opResult = ioctl(i2cHandle, I2C_TENBIT, 0);
 
 	/* address of device we will be working with */
-	opResult = ioctl(i2cHandle, I2C_SLAVE, ds1307Addresss);
+	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
-	/* address to read from */
-	txBuffer[0] = 0x00; 
 
-	/* write read address */
-	opResult = write(i2cHandle, txBuffer, 1);
-	if (opResult != 1) 
-		printf("No ACK bit!\n");
+	/* do any requested reading */
+	if ( dateRead || ramRead || dumpRead ) {
 
-	/*  read buffer length */
-	memset(rxBuffer, 0, sizeof(rxBuffer));
-	opResult = read(i2cHandle, rxBuffer, sizeof(rxBuffer));
-	/* dump */
-	for ( i=0 ; i<sizeof(rxBuffer) ; i++ ) {
-		printf("# rxBuffer[%-2d]=0x%02X ",i,rxBuffer[i],rxBuffer[i]);
-		if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 127 ) {
-			printf("(%c) ",rxBuffer[i]);
-		} else {
-			printf("(non-printable) ");
+		/* address to read from */
+		txBuffer[0] = 0x00; 
+
+		/* write read address */
+		opResult = write(i2cHandle, txBuffer, 1);
+		if (opResult != 1) {
+			fprintf(stderr,"# No ACK bit! Exiting...\n");
+			exit(2);
 		}
-		printf("\n");
+
+		/*  read buffer length */
+		memset(rxBuffer, 0, sizeof(rxBuffer));
+		opResult = read(i2cHandle, rxBuffer, sizeof(rxBuffer));
+
+		if ( dateRead ) {
+			fprintf(stderr,"# Date read from DS1307 RTC\n");
+			ds1307_date_to_str(rxBuffer, txBuffer, sizeof(txBuffer));
+			printf("%s\n",txBuffer);
+		} else if ( ramRead ) {
+			fprintf(stderr,"# RAM read from DS1307 RTC\n");
+			for ( i=8 ; i<64 ; i++ ) {
+				putchar(rxBuffer[i]);
+			}
+		} else if ( dumpRead) {
+			fprintf(stderr,"# Dump from DS1307 RTC\n");
+			for ( i=0 ; i<64 ; i++ ) {
+				putchar(rxBuffer[i]);
+			}
+		}
 	}
 
+	if ( strlen(dateSetBuffer) ) {
+		txBuffer[0]=0x00; /* address of clock registers */
 
+		if ( 0 != ds1307_build_date_from_string(dateSetBuffer, txBuffer+1) ) {
+			fprintf(stderr,"# invalid date format or value. Exiting...\n");
+			exit(3);
+		}
+
+		/* txBuffer should now be filled with address of clock register and 8 bytes of clock data. Now we can write. */
+
+		opResult = write(i2cHandle, txBuffer, 9);
+		if (opResult != 1) {
+			printf("No ACK bit!\n");
+		}
+	}
+
+#if 0
 	/* write a string to scratch RAM */
 	memset(txBuffer,'\0',sizeof(txBuffer));
 	/* first byte will be replaced by address to write to */
@@ -152,8 +295,16 @@ int main(void) {
 	opResult = write(i2cHandle, txBuffer, 56);
 	if (opResult != 1) 
 		printf("No ACK bit!\n");
+#endif
 
-	return 0;
+	if ( -1 == close(i2cHandle) ) {
+		fprintf(stderr,"# Error closing I2C device.\n# %s\n# Exiting...\n",strerror(errno));
+		exit(1);
+	}
+	
+	fprintf(stderr,"# Done...\n");
+	
+	exit(0);
 
 }
 
