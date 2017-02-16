@@ -356,7 +356,6 @@ int main(int argc, char **argv) {
 		/* write to file */
 		if ( stringMode ) {
 			for ( i=0 ; i<nBytes && '\0' != rxBuffer[i] ; i++ ) {
-//				fprintf(stderr,"# rxBuffer[%d]=0x%02X\n",i,rxBuffer[i]);
 				if ( EOF == fputc(rxBuffer[i],fp) ) {
 					fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",i-1);
 					exit(1);
