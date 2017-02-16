@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
 	int startAddress;
 	int nBytes;
 	char *inFilename, *outFilename;
-	int breakOnNull;
+	int stringMode;
 
 	/* I2C stuff */
 	char i2cDevice[64];	/* I2C device name */
@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
 	startAddress=0;
 	nBytes=8192;
 	inFilename=outFilename=NULL;
-	breakOnNull=0;
+	stringMode=0;
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	i2cAddress=0x50; 		/* 0b1010(A2)(A1)(A0) */
@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
 
 		switch (c) {
 			case 'b':
-				breakOnNull=1;
+				stringMode=1;
 				break;
 			case 's':
 				startAddress=atoi(optarg);
@@ -89,6 +89,10 @@ int main(int argc, char **argv) {
 				nBytes=atoi(optarg);
 				if ( nBytes<1 || nBytes>8192 ) {
 					fprintf(stderr,"# number of bytes out of range (1 to 8192)\n# Exiting...\n");
+					exit(1);
+				} 
+				if ( nBytes+startAddress>8192 ) {
+					fprintf(stderr,"# nBytes+startAddress=%d which exceeds 8192 byte capacitor of EEPROM.\n# Exiting...\n",nBytes+startAddress);
 					exit(1);
 				} 
 				break;
@@ -141,7 +145,7 @@ int main(int argc, char **argv) {
 	/* write operation if needed */
 	if ( NULL != inFilename ) {
 		fprintf(stderr,"# input file: %s\n",inFilename);
-		if ( breakOnNull ) {
+		if ( stringMode ) {
 			fprintf(stderr,"# write string mode (stopping at first null)\n");
 		} else {
 		 	fprintf(stderr,"# write binary mode\n");
@@ -154,68 +158,138 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 
-		while (1) { 
-			/* EEPROM write is in 32 byte or less chunks. After writing, we must poll for ack to know that write is done */
+		int done=0;
+		int bytesRead=0;
+		/* 
+		write can start anywhere, but we must write <= page length (32 bytes). So if we want to start at address 30,
+		for example, then we can only write address 30 and address 31 in this page 
+	
+		Examples:
+		address	bytesWeCanWrite
+		0	32 (0, 1, 2, ..., 31)
+		30	2  (30, 31)
+		31	1  (31)
+		32	32 (0, 1, 2, ..., 31)
 
-			/* read up to 32 bytes */
-			for ( i=2 ; i<32+2 ; i++ ) {
-				txBuffer[i] = fgetc(fp);
+		bytesWeCanWrite = 32-(address%32)
 
-				if ( EOF == txBuffer[i] ) {
-					break;
-				}
+		*/
+		int address=startAddress;
+		/* EEPROM write is in 32 byte or less chunks. After writing, we must poll for ack to know that write is done */
+		do {
+			int bytesWeCanWrite = 32-(address%32);
 
-				if ( breakOnNull && '\0' == txBuffer[i] ) {
+//			printf("# start of do {} loop: address=%d bytesWeCanWrite=%d\n",address,bytesWeCanWrite);
+
+			/* read up to bytesWeCanWrite bytes + save two bytes for address */
+			for ( i=2 ; i<(bytesWeCanWrite+2) && bytesRead < nBytes ; i++,bytesRead++ ) {
+				int c=fgetc(fp);
+
+				txBuffer[i] = c;
+
+				if ( (EOF == c) || ( stringMode && '\0' == txBuffer[i] ) ) {
+					done=1;
 					break;
 				}
 			}
-			fprintf(stderr,"# i=%d\n",i);
 
-	
+			if ( bytesRead >= nBytes ) {
+				fprintf(stderr,"# WARNING: trucating input\n");
+				done=1;
+			}
+#if 0			
+			fprintf(stderr,"# i=%d nBytes=%d bytesRead=%d done=%d\n",i,nBytes,bytesRead,done);
+			int j;
+			for ( j=0 ; j<i ; j++ ) {
+				fprintf(stderr,"# txBuffer[%d] 0x%02X",j,txBuffer[j]);
+				if ( 0 == j )
+					fprintf(stderr," <- ADDRESS MSB ");
+				if ( 1 == j )
+					fprintf(stderr," <- ADDRESS LSB ");
+				fprintf(stderr,"\n");
+			}
+#endif
+
 
 			/* address high byte */
-			txBuffer[0] = ((startAddress>>8) & 0b00011111);
+			txBuffer[0] = ((address>>8) & 0b00011111);
 			/* address low byte */
-			txBuffer[1] = (startAddress & 0b11111111);
+			txBuffer[1] = (address & 0b11111111);
 
-			int j;
-			for ( j=0 ; j<32+2 ; j++ ) {
-				fprintf(stderr,"# txBuffer[%d] = 0x%02X\n",j,txBuffer[j]);
+			/* write */
+			opResult = write(i2cHandle, txBuffer, i);
 
+			/* poll for acknowledgement so we can write the next page */
+			for ( nTries=0 ; ; nTries++ ) {
+				opResult = write(i2cHandle,txBuffer,0);
+//				fprintf(stderr,"poll nTries=%d opResult=%d\n",nTries,opResult);
+
+				if ( opResult != -1 ) 
+					break;
+
+				if ( nTries >= TIMEOUT_NTRIES ) {
+					fprintf(stderr,"# Timeout while polling for write acknowledgement! Exiting...\n");
+					exit(2);
+				}
 			}
 
-			/* fixme */
-			break;
-		}
+			address += bytesWeCanWrite;
+		} while ( ! done );
+
+		/* 
+		if we need to null terminate, we now do that as a separate write 
+		
+		if we have room left before hitting nBytes limit, we put '\0' after data.
+		if we are out of room, then we replace the last data byte with a '\0'
+		*/
+		if ( stringMode ) {
+			int nullAddress;
+
+
+			if ( bytesRead >= (startAddress+nBytes) ) {
+				/* replace last byte */
+				nullAddress=bytesRead-1;
+				fprintf(stderr,"# WARNING: replacing last byte with null at address %d.\n",nullAddress);
+			} else {
+				/* put after last byte */
+				nullAddress=bytesRead;
+				bytesRead++;
+				fprintf(stderr,"# adding null after last byte. null at address %d.\n",nullAddress);
+			}
+
+			/* address high byte */
+			txBuffer[0] = ((nullAddress>>8) & 0b00011111);
+			/* address low byte */
+			txBuffer[1] = (nullAddress & 0b11111111);
+			/* null byte */
+			txBuffer[2] = '\0';
+
+			/* write */
+			opResult = write(i2cHandle, txBuffer, 3);
+
+			/* poll for acknowledgement so we can write the next page */
+			for ( nTries=0 ; ; nTries++ ) {
+				opResult = write(i2cHandle,txBuffer,0);
+//				fprintf(stderr,"poll nTries=%d opResult=%d\n",nTries,opResult);
+
+				if ( opResult != -1 ) 
+					break;
+
+				if ( nTries >= TIMEOUT_NTRIES ) {
+					fprintf(stderr,"# Timeout while polling for write acknowledgement! Exiting...\n");
+					exit(2);
+				}
+			}
+		} 
 
 		/* close output file */
 		if ( 0 != fclose(fp) ) {
 			fprintf(stderr,"# Error closing input file.\n# %s\n# Exiting...\n",strerror(errno));
 			exit(1);
 		}
+
+		fprintf(stderr,"# wrote %d bytes to EEPROM\n",bytesRead);
 	}
-
-#if 0
-	txBuffer[0]=0x00;
-	txBuffer[1]=0x00;
-	sprintf(txBuffer+2,"short message...");
-	opResult = write(i2cHandle, txBuffer, strlen(txBuffer+2)+3); /* +3 is for two address bytes + 1 null */
-	fprintf(stderr,"opResult=%d\n",opResult);
-
-	/* poll for acknowledgement so we can write the next page */
-	for ( nTries=0 ; ; nTries++ ) {
-		opResult = write(i2cHandle,txBuffer,0);
-		fprintf(stderr,"poll nTries=%d opResult=%d\n",nTries,opResult);
-
-		if ( opResult != -1 ) 
-			break;
-
-		if ( nTries >= TIMEOUT_NTRIES ) {
-			fprintf(stderr,"# Timeout while polling for write acknowledgement! Exiting...\n");
-			exit(2);
-		}
-	}
-#endif
 
 
 	/* do any requested reading after sets */
@@ -243,7 +317,7 @@ int main(int argc, char **argv) {
 		}
 	} else if ( NULL != outFilename ) {
 		fprintf(stderr,"# output file: %s\n",outFilename);
-		if ( breakOnNull ) {
+		if ( stringMode ) {
 			fprintf(stderr,"# read string mode (stopping before first null)\n");
 		} else {
 		 	fprintf(stderr,"# read binary mode\n");
@@ -273,7 +347,7 @@ int main(int argc, char **argv) {
 		opResult = read(i2cHandle, rxBuffer, nBytes);
 
 		/* write to file */
-		if ( breakOnNull ) {
+		if ( stringMode ) {
 			for ( i=0 ; i<nBytes && '\0' != rxBuffer[i] ; i++ ) {
 				if ( EOF == fputc(rxBuffer[i],fp) ) {
 					fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",i-1);
