@@ -16,6 +16,8 @@ extern int optind, opterr, optopt;
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
 
+/* byte capacity of EEPROM */
+#define CAPACITY_BYTES 8192
 
 int main(int argc, char **argv) {
 	/* optarg */
@@ -34,7 +36,7 @@ int main(int argc, char **argv) {
 	int i2cAddress; 	/* chip address */
 
 
-	char rxBuffer[8192];	/* receive buffer */
+	char rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	char txBuffer[33+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
 
@@ -47,7 +49,7 @@ int main(int argc, char **argv) {
 	/* defaults and command line arguments */
 	dumpRead=0;
 	startAddress=0;
-	nBytes=8192;
+	nBytes=CAPACITY_BYTES;
 	inFilename=outFilename=NULL;
 	stringMode=0;
 
@@ -66,6 +68,7 @@ int main(int argc, char **argv) {
 		        {"n-bytes",        required_argument, 0, 'n' },
 		        {"i2c-device",     required_argument, 0, 'i' },
 		        {"i2c-address",    required_argument, 0, 'a' },
+		        {"capacity",       no_argument,       0, 'c' },
 		        {0,                0,                 0,  0 }
 		};
 
@@ -75,6 +78,9 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
+			case 'c':
+				printf("%d\n",CAPACITY_BYTES);
+				exit(1);
 			case 'b':
 				stringMode=1;
 				break;
@@ -87,12 +93,12 @@ int main(int argc, char **argv) {
 				break;
 			case 'n':
 				nBytes=atoi(optarg);
-				if ( nBytes<1 || nBytes>8192 ) {
-					fprintf(stderr,"# number of bytes out of range (1 to 8192)\n# Exiting...\n");
+				if ( nBytes<1 || nBytes>CAPACITY_BYTES ) {
+					fprintf(stderr,"# number of bytes out of range (1 to CAPACITY_BYTES)\n# Exiting...\n");
 					exit(1);
 				} 
-				if ( nBytes+startAddress>8192 ) {
-					fprintf(stderr,"# nBytes+startAddress=%d which exceeds 8192 byte capacitor of EEPROM.\n# Exiting...\n",nBytes+startAddress);
+				if ( nBytes+startAddress>CAPACITY_BYTES ) {
+					fprintf(stderr,"# nBytes+startAddress=%d which exceeds CAPACITY_BYTES byte capacitor of EEPROM.\n# Exiting...\n",nBytes+startAddress);
 					exit(1);
 				} 
 				break;
@@ -248,11 +254,11 @@ int main(int argc, char **argv) {
 
 			if ( bytesRead >= (startAddress+nBytes) ) {
 				/* replace last byte */
-				nullAddress=bytesRead-1;
+				nullAddress=startAddress+bytesRead-1;
 				fprintf(stderr,"# WARNING: replacing last byte with null at address %d.\n",nullAddress);
 			} else {
 				/* put after last byte */
-				nullAddress=bytesRead;
+				nullAddress=startAddress+bytesRead;
 				bytesRead++;
 				fprintf(stderr,"# adding null after last byte. null at address %d.\n",nullAddress);
 			}
@@ -345,10 +351,12 @@ int main(int argc, char **argv) {
 		/*  read buffer length */
 		memset(rxBuffer, 0, sizeof(rxBuffer));
 		opResult = read(i2cHandle, rxBuffer, nBytes);
+		fprintf(stderr,"# %d bytes read\n",opResult);
 
 		/* write to file */
 		if ( stringMode ) {
 			for ( i=0 ; i<nBytes && '\0' != rxBuffer[i] ; i++ ) {
+//				fprintf(stderr,"# rxBuffer[%d]=0x%02X\n",i,rxBuffer[i]);
 				if ( EOF == fputc(rxBuffer[i],fp) ) {
 					fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",i-1);
 					exit(1);
