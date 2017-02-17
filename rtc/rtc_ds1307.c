@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <unistd.h>
-#include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
