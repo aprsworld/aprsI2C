@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# cron script to set the hardware RTC to system date if system
+# date has good NTP date. Otherwise set the system date to the
+# hardware RTC
+
+/usr/local/sbin/rtcSync
+echo "`date +"%Y-%m-%d %k:%M:%S"`" > /tmp/rtcSync.last

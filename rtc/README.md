@@ -37,17 +37,6 @@ switch|argument|description
 --ram-set|string|write string to RAM
 --dump|(none)|dump all 64 bytes of RTC and RAM to stdout
 
-## rtcSync
-Shell scrip that sets the system clock to the RTC if NTP stratum >= 16 (bad). If NTP time is good, then set the RTC to the system clock. Can be run with cron by putting a script in /etc/cron.hourly, such as:
-```
-#!/bin/sh
-#
-# cron script to set the hardware RTC to system date if system
-# date has good NTP date. Otherwise set the system date to the
-# hardware RTC
-
-/usr/local/sbin/rtcSync
-echo "`date +"%Y-%m-%d %k:%M:%S"`" > /tmp/rtcSync.last
-```
-
+## rtcSync and rtcSync_cron
+Shell scrip that sets the system clock to the RTC if NTP stratum >= 16 (bad). If NTP time is good, then set the RTC to the system clock. Can be run with cron by putting a script in `/etc/cron.hourly`, such as the script `rtcSync_cron`. Verify that cron likes the script by executing `sudo run-parts --report --test /etc/cron.hourly`
 
