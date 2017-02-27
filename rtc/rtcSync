@@ -5,19 +5,23 @@
 # otherwise set our system date to the RTC
 stratum=`ntpq -c "rv 0 stratum,offset" | cut -d = -f 2 | cut -d , -f 1`
 
+# write to syslog
+kmessage="rtcSync system=`date +"%Y-%m-%d %k:%M:%S"` rtc=`rtc --read 2>/dev/null` stratum='$stratum'"
 
 echo -n "[APRS/rtcSync] Current hardware RTC date: "
 rtc --read 2>/dev/null
 echo -n "[APRS/rtcSync]       Current system date: "
 date +"%Y-%m-%d %k:%M:%S"
 
-if [ "$stratum" -lt 16 ] 
+if [ ! -z "$stratum" ] && [ "$stratum" -lt 16 ] 
 then
 	echo "[APRS/rtcSync] Stratum $stratum is <16, we will update hardware RTC"
+	logger $kmessage "setting RTC"
 	rtc --set "`date +"%Y-%m-%d %k:%M:%S"`" 2>/dev/null
 else
 	echo "[APRS/rtcSync] Stratum $stratum is >=16, we will set system date from RTC"
-	date --set "`./rtc --read 2>/dev/null`"
+	logger $kmessage "setting system"
+	date --set "`rtc --read 2>/dev/null`"
 fi
 
 echo -n "[APRS/rtcSync]     New hardware RTC date: "
