@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# check status of NTP. If stratum < 16, then we have some
+# sort of NTP sync and we will set our RTC to that
+# otherwise set our system date to the RTC
+stratum=`ntpq -c "rv 0 stratum,offset" | cut -d = -f 2 | cut -d , -f 1`
+
+
+echo -n "[APRS/rtcSync] Current hardware RTC date: "
+rtc --read 2>/dev/null
+echo -n "[APRS/rtcSync]       Current system date: "
+date +"%Y-%m-%d %k:%M:%S"
+
+if [ "$stratum" -lt 16 ] 
+then
+	echo "[APRS/rtcSync] Stratum $stratum is <16, we will update hardware RTC"
+	rtc --set "`date +"%Y-%m-%d %k:%M:%S"`" 2>/dev/null
+else
+	echo "[APRS/rtcSync] Stratum $stratum is >=16, we will set system date from RTC"
+	date --set "`./rtc --read 2>/dev/null`"
+fi
+
+echo -n "[APRS/rtcSync]     New hardware RTC date: "
+rtc --read 2>/dev/null
+echo -n "[APRS/rtcSync]           New system date: "
+date +"%Y-%m-%d %k:%M:%S"
+
+exit 0
