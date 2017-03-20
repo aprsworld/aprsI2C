@@ -180,6 +180,7 @@ int main(int argc, char **argv) {
 
 		int done=0;
 		int bytesRead=0;
+		int truncated=0;
 		/* 
 		write can start anywhere, but we must write <= page length (32 bytes). So if we want to start at address 30,
 		for example, then we can only write address 30 and address 31 in this page 
@@ -215,6 +216,7 @@ int main(int argc, char **argv) {
 
 			if ( bytesRead >= nBytes ) {
 				fprintf(stderr,"# WARNING: truncating input\n");
+				truncated=1;
 				done=1;
 			}
 #if 0			
@@ -266,15 +268,15 @@ int main(int argc, char **argv) {
 			int nullAddress;
 
 
-			if ( bytesRead >= (startAddress+nBytes) ) {
+			if ( truncated ) {
 				/* replace last byte */
 				nullAddress=startAddress+bytesRead-1;
-				fprintf(stderr,"# WARNING: replacing last byte with null at address %d.\n",nullAddress);
+				fprintf(stderr,"# WARNING: replacing last byte with null at address %d due to --string mode.\n",nullAddress);
 			} else {
 				/* put after last byte */
 				nullAddress=startAddress+bytesRead;
 				bytesRead++;
-				fprintf(stderr,"# adding null after last byte. null at address %d.\n",nullAddress);
+				fprintf(stderr,"# adding null after last byte. null at address %d due to --string mode.\n",nullAddress);
 			}
 
 			/* address high byte */
