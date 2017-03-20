@@ -68,6 +68,7 @@ int main(int argc, char **argv) {
 		        {"i2c-device",     required_argument, 0, 'i' },
 		        {"i2c-address",    required_argument, 0, 'a' },
 		        {"capacity",       no_argument,       0, 'c' },
+		        {"help",           no_argument,       0, 'h' },
 		        {0,                0,                 0,  0 }
 		};
 
@@ -77,6 +78,20 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
+			case 'h':
+				printf("switch           argument       description\n");
+				printf("========================================================================================================\n");
+				printf("--read           filename       read EEPROM and write to filename\n");
+				printf("--write          filename       write contents of filename to EEPROM\n");
+				printf("--dump                          dump entire contents of EEPROM to stdout\n");
+				printf("--string                        null terminate written content. Or read EEPROM until null encountered\n");
+				printf("--start-address  address        starting EEPROM address\n");
+				printf("--n-bytes        bytes          read/write n-bytes or up to n-bytes when in --string mode\n");
+				printf("--i2c-device     device         /dev/ entry for I2C-dev device\n");
+				printf("--i2c-address    chip address   hex address of chip\n");
+				printf("--capacity                      print capacity of EEPROM to stdout and exit\n");
+				printf("--help                          this message\n");
+				exit(0);	
 			case 'c':
 				printf("%d\n",CAPACITY_BYTES);
 				exit(1);
@@ -199,7 +214,7 @@ int main(int argc, char **argv) {
 			}
 
 			if ( bytesRead >= nBytes ) {
-				fprintf(stderr,"# WARNING: trucating input\n");
+				fprintf(stderr,"# WARNING: truncating input\n");
 				done=1;
 			}
 #if 0			
