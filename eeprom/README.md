@@ -10,6 +10,7 @@ switch|argument|description
 --dump|(none)|dump entire contents of EEPROM to stdout
 --string|(none)|null terminate contents to write. Read EEPROM until null encountered
 --n-bytes|bytes|read/write up to `n-bytes`
+--start-address|address|starting EEPROM address
 --i2c-device|device|`/dev/` entry for I2C-dev device
 --i2c-address|chip address|hex address of chip
 
