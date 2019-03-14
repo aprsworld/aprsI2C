@@ -16,7 +16,7 @@ switch|argument|description
 
 ### Example: Write output of ifconfig to EEPROM as a string, starting at address 128, with 2048 byte limit
 ```
-mwp@raspberrypi:~/aprsI2C/eeprom $ ifconfig | ./ee_2464 --string --write /dev/stdin --start-address 128 --n-bytes 2048 
+mwp@raspberrypi:~/aprsI2C/eeprom $ ifconfig | ./eeprom_2464 --string --write /dev/stdin --start-address 128 --n-bytes 2048 
 # ee_2464 24AA64 / 24LC64 EEPROM I2C utility
 # using I2C device /dev/i2c-1
 # using I2C device address of 0x50
@@ -32,7 +32,7 @@ mwp@raspberrypi:~/aprsI2C/eeprom $ ifconfig | ./ee_2464 --string --write /dev/st
 
 ### Example: Read that back and write to a file called test2
 ````
-mwp@raspberrypi:~/aprsI2C/eeprom $ ./ee_2464 --string --read test2 --start-address 128  --n-bytes 2048
+mwp@raspberrypi:~/aprsI2C/eeprom $ ./eeprom_2464 --string --read test2 --start-address 128  --n-bytes 2048
 # ee_2464 24AA64 / 24LC64 EEPROM I2C utility
 # using I2C device /dev/i2c-1
 # using I2C device address of 0x50
