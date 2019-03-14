@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
 	int i, nTries;
 
 
-	fprintf(stderr,"# eeprom_2464 24AA64 / 24LC64 EEPROM I2C utility\n");
+	fprintf(stderr,"# ee_2464 24AA64 / 24LC64 EEPROM I2C utility\n");
 
 	/* defaults and command line arguments */
 	dumpRead=0;
