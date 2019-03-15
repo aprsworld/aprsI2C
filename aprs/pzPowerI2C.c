@@ -15,8 +15,8 @@ extern int optind, opterr, optopt;
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
 
-/* byte capacity of EEPROM */
-#define CAPACITY_BYTES 8192
+/* byte capacity of device */
+#define CAPACITY_BYTES 128
 
 int main(int argc, char **argv) {
 	/* optarg */
@@ -24,11 +24,10 @@ int main(int argc, char **argv) {
 	int digit_optind = 0;
 
 	/* program flow */
-	int dumpRead; 
-	int startAddress;
-	int nBytes;
-	char *inFilename, *outFilename;
-	int stringMode;
+	int powerHostOnSeconds = -1;
+	int powerHostOffSeconds = -1;
+	int powerNetOnSeconds = -1;
+	int powerNetOffSeconds = -1;
 
 	/* I2C stuff */
 	char i2cDevice[64];	/* I2C device name */
@@ -43,31 +42,23 @@ int main(int argc, char **argv) {
 	int i, nTries;
 
 
-	fprintf(stderr,"# ee_2464 24AA64 / 24LC64 EEPROM I2C utility\n");
+	fprintf(stderr,"# pzPowerI2C utility\n");
 
-	/* defaults and command line arguments */
-	dumpRead=0;
-	startAddress=0;
-	nBytes=CAPACITY_BYTES;
-	inFilename=outFilename=NULL;
-	stringMode=0;
+
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
-	i2cAddress=0x50; 		/* 0b1010(A2)(A1)(A0) */
+	i2cAddress=0x22; 	
 
 	while (1) {
 		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 		static struct option long_options[] = {
-		        {"read",           required_argument, 0, 'r' },
-		        {"write",          required_argument, 0, 'w' },
-		        {"dump",           no_argument,       0, 'd' },
-		        {"string",         no_argument,       0, 'b' },
-		        {"start-address",  required_argument, 0, 's' },
-		        {"n-bytes",        required_argument, 0, 'n' },
+		        {"power-host-on",  required_argument, 0, 'P' },
+		        {"power-host-off", required_argument, 0, 'p' },
+		        {"power-net-on",   required_argument, 0, 'N' },
+		        {"power-net-off",  required_argument, 0, 'n' },
 		        {"i2c-device",     required_argument, 0, 'i' },
 		        {"i2c-address",    required_argument, 0, 'a' },
-		        {"capacity",       no_argument,       0, 'c' },
 		        {"help",           no_argument,       0, 'h' },
 		        {0,                0,                 0,  0 }
 		};
@@ -81,46 +72,44 @@ int main(int argc, char **argv) {
 			case 'h':
 				printf("switch           argument       description\n");
 				printf("========================================================================================================\n");
-				printf("--read           filename       read EEPROM and write to filename\n");
-				printf("--write          filename       write contents of filename to EEPROM\n");
-				printf("--dump                          dump entire contents of EEPROM to stdout\n");
-				printf("--string                        null terminate written content. Or read EEPROM until null encountered\n");
+				printf("--read           filename       read pzPowerI2C and send JSON formatted data to stdout\n");
+				printf("--power-host-on  seconds        turn on power switch to host after seconds delay.\n");
+				printf("--power-host-off seconds        turn off power switch to host after seconds delay.\n");
+				printf("--power-net-on   seconds        turn on power switch to external USB device after seconds delay.\n");
+				printf("--power-net-off  seconds        turn off power switch to external USB device after seconds delay.\n");
 				printf("--start-address  address        starting EEPROM address\n");
-				printf("--n-bytes        bytes          read/write n-bytes or up to n-bytes when in --string mode\n");
 				printf("--i2c-device     device         /dev/ entry for I2C-dev device\n");
 				printf("--i2c-address    chip address   hex address of chip\n");
-				printf("--capacity                      print capacity of EEPROM to stdout and exit\n");
 				printf("--help                          this message\n");
 				exit(0);	
-			case 'c':
-				printf("%d\n",CAPACITY_BYTES);
-				exit(1);
-			case 'b':
-				stringMode=1;
 				break;
-			case 's':
-				startAddress=atoi(optarg);
-				if ( startAddress<0 || startAddress>8191 ) {
-					fprintf(stderr,"# start address out of range (0 to 8191)\n# Exiting...\n");
+			case 'P':
+				powerHostOnSeconds=atoi(optarg);
+				if ( powerHostOnSeconds<0 || powerHostOnSeconds>65534 ) {
+					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
+					exit(1);
+				} 
+				break;
+			case 'p':
+				powerHostOffSeconds=atoi(optarg);
+				if ( powerHostOffSeconds<0 || powerHostOffSeconds>65534 ) {
+					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
+					exit(1);
+				} 
+				break;
+			case 'N':
+				powerNetOnSeconds=atoi(optarg);
+				if ( powerNetOnSeconds<0 || powerNetOnSeconds>65534 ) {
+					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
 					exit(1);
 				} 
 				break;
 			case 'n':
-				nBytes=atoi(optarg);
-				if ( nBytes<1 || nBytes>CAPACITY_BYTES ) {
-					fprintf(stderr,"# number of bytes out of range (1 to CAPACITY_BYTES)\n# Exiting...\n");
+				powerNetOffSeconds=atoi(optarg);
+				if ( powerNetOffSeconds<0 || powerNetOffSeconds>65534 ) {
+					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
 					exit(1);
 				} 
-				if ( nBytes+startAddress>CAPACITY_BYTES ) {
-					fprintf(stderr,"# nBytes+startAddress=%d which exceeds CAPACITY_BYTES byte capacitor of EEPROM.\n# Exiting...\n",nBytes+startAddress);
-					exit(1);
-				} 
-				break;
-			case 'w':
-				inFilename=optarg;
-				break;
-			case 'r':
-				outFilename=optarg;
 				break;
 			case 'a':
 				sscanf(optarg,"%x",&i2cAddress);
@@ -129,22 +118,12 @@ int main(int argc, char **argv) {
 				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
 				i2cDevice[sizeof(i2cDevice)-1]='\0';
 				break;
-			case 'd':
-				dumpRead=1;
-				break;
 		}
 	}
 
 	/* start-up verbosity */
 	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
 	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
-
-	if ( NULL != inFilename ) {
-		fprintf(stderr,"# input file: %s\n",inFilename);
-	}
-
-	fprintf(stderr,"# start address: %d\n",startAddress);
-	fprintf(stderr,"# bytes to read / write: %d\n",nBytes);
 
 
 	/* Open I2C bus */
@@ -161,7 +140,7 @@ int main(int argc, char **argv) {
 	/* address of device we will be working with */
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
-
+#if 0
 	/* write operation if needed */
 	if ( NULL != inFilename ) {
 		fprintf(stderr,"# input file: %s\n",inFilename);
@@ -219,18 +198,6 @@ int main(int argc, char **argv) {
 				truncated=1;
 				done=1;
 			}
-#if 0			
-			fprintf(stderr,"# i=%d nBytes=%d bytesRead=%d done=%d\n",i,nBytes,bytesRead,done);
-			int j;
-			for ( j=0 ; j<i ; j++ ) {
-				fprintf(stderr,"# txBuffer[%d] 0x%02X",j,txBuffer[j]);
-				if ( 0 == j )
-					fprintf(stderr," <- ADDRESS MSB ");
-				if ( 1 == j )
-					fprintf(stderr," <- ADDRESS LSB ");
-				fprintf(stderr,"\n");
-			}
-#endif
 
 
 			/* address high byte */
@@ -392,6 +359,7 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 	}
+#endif
 
 
 	if ( -1 == close(i2cHandle) ) {
