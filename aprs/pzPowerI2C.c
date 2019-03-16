@@ -28,6 +28,9 @@ int main(int argc, char **argv) {
 	int powerHostOffSeconds = -1;
 	int powerNetOnSeconds = -1;
 	int powerNetOffSeconds = -1;
+	int actionRead = 0;
+	int actionReadSwitch = 0;
+	int actionResetSwitchLatch = 0;
 
 	/* I2C stuff */
 	char i2cDevice[64];	/* I2C device name */
@@ -53,14 +56,17 @@ int main(int argc, char **argv) {
 		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 		static struct option long_options[] = {
-		        {"power-host-on",  required_argument, 0, 'P' },
-		        {"power-host-off", required_argument, 0, 'p' },
-		        {"power-net-on",   required_argument, 0, 'N' },
-		        {"power-net-off",  required_argument, 0, 'n' },
-		        {"i2c-device",     required_argument, 0, 'i' },
-		        {"i2c-address",    required_argument, 0, 'a' },
-		        {"help",           no_argument,       0, 'h' },
-		        {0,                0,                 0,  0 }
+		        {"power-host-on",       required_argument, 0, 'P' },
+		        {"power-host-off",      required_argument, 0, 'p' },
+		        {"power-net-on",        required_argument, 0, 'N' },
+		        {"power-net-off",       required_argument, 0, 'n' },
+			{"read",                no_argument,       0, 'r' },
+			{"read-switch",         no_argument,       0, 's' },
+			{"reset-swtitch-latch", no_argument,       0, 'S' },
+		        {"i2c-device",          required_argument, 0, 'i' },
+		        {"i2c-address",         required_argument, 0, 'a' },
+		        {"help",                no_argument,       0, 'h' },
+		        {0,                     0,                 0,  0 }
 		};
 
 		c = getopt_long(argc, argv, "", long_options, &option_index);
@@ -69,6 +75,15 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
+			case 'r':
+				actionRead=1;
+				break;
+			case 's':
+				actionReadSwitch=1;
+				break;
+			case 'S':
+				actionResetSwitchLatch=1;
+				break;
 			case 'h':
 				printf("switch           argument       description\n");
 				printf("========================================================================================================\n");
