@@ -17,3 +17,38 @@ switch|argument|description
 --power-net-on|seconds|turn on power switch to external USB device (ie network adapter) after `seconds` delay. 0 for no delay. 65534 seconds max delay.
 --power-net-off|seconds|turn on power switch to external USB device (ie network adapter) after `seconds` delay. 0 for no delay. 65534 seconds max delay.
 --read|(none)|read current state and send to stdout in JSON format
+--read-switch|(none)|
+
+read current state of magnetic switch, send to stdout in JSON format, set exit value
+
+exit value|description
+---|---
+0|Success
+1|Error
+2|Timeout
+3|not applicable
+4|Magnetic switch active
+
+--read-switch-latch|(none)|read latch of magnetic switch, send to stdout in JSON format, set exit value
+
+
+--reset-switch-latch|(none)|clear the latch of the magnetic switch
+
+### Exit value
+exit value|description
+---|---
+0|Success
+1|Error
+2|Timeout
+3|not applicable
+4|Magnetic switch active
+
+
+01234567
+
+Bits
+76543210
+       ^ success / error
+      ^  timeout / not timeout
+     ^   magnetic switch active / magnetic switch not active
+    ^    magnetic latch set / magnetic latch not set
