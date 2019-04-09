@@ -10,7 +10,7 @@ switch|argument|description
 
 ## pzPowerI2C
 
-The default I2C address for pzPowerI2C board is `0x1a`. This is defined in [pzPowerI2C.h] (https://github.com/aprsworld/pzPowerI2C/blob/master/pzPowerI2C.h). The convention used in that is shift to the left one bit of what Linux sees. So 0x34 in pzPowerI2C.h >> 1 becomes 0x1a.
+The default I2C address for pzPowerI2C board is `0x1a`. This is defined in [pzPowerI2C.h] (https://github.com/aprsworld/pzPowerI2C/blob/master/pzPowerI2C.h). The convention used in that is shift to the left one bit of what Linux sees. So `0x34` in pzPowerI2C.h `>> 1` becomes `0x1a`.
 
 switch|argument|description
 ---|---|---
