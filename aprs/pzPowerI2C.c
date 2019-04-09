@@ -37,7 +37,8 @@ int main(int argc, char **argv) {
 	int i2cAddress; 	/* chip address */
 
 
-	char rxBuffer[CAPACITY_BYTES];	/* receive buffer */
+//	char rxBuffer[CAPACITY_BYTES];	/* receive buffer */
+	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	char txBuffer[33+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
 
@@ -50,7 +51,7 @@ int main(int argc, char **argv) {
 
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
-	i2cAddress=0x22; 	
+	i2cAddress=0x1a;		/* default address of pzPower in pzPowerI2C.h */ 	
 
 	while (1) {
 		int this_option_optind = optind ? optind : 1;
@@ -154,6 +155,53 @@ int main(int argc, char **argv) {
 
 	/* address of device we will be working with */
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
+
+	/* read pzPowerI2C registers in all cases */
+	if ( 1 ) {
+		int startAddress=0;
+		int nRegisters=42;
+
+		/* address high byte */
+		txBuffer[0] = ((startAddress>>8) & 0b00011111);
+		/* address low byte */
+		txBuffer[1] = (startAddress & 0b11111111);
+
+		/* write read address */
+		opResult = write(i2cHandle, txBuffer, 2);
+
+
+		if (opResult != 2) {
+			fprintf(stderr,"# No ACK! Exiting...\n");
+			exit(2);
+		}
+
+		/* read registers into rxBuffer */
+		memset(rxBuffer, 0, sizeof(rxBuffer));
+		opResult = read(i2cHandle, rxBuffer, nRegisters * 2);
+		fprintf(stderr,"# %d bytes read\n",opResult);
+
+		/* results */
+		for ( i=0 ; i<nRegisters ; i++ ) {
+			fprintf(stderr,"# reg[%03d] = 0x%04x (%4d)",i,rxBuffer[i],rxBuffer[i]);
+
+			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
+				fprintf(stderr," '%c'",rxBuffer[i]);
+			} 
+			fprintf(stderr,"\n");
+
+		}
+	}
+
+
+	if ( -1 == close(i2cHandle) ) {
+		fprintf(stderr,"# Error closing I2C device.\n# %s\n# Exiting...\n",strerror(errno));
+		exit(1);
+	}
+	
+	fprintf(stderr,"# Done...\n");
+	
+	exit(0);
+}
 
 #if 0
 	/* write operation if needed */
@@ -375,15 +423,3 @@ int main(int argc, char **argv) {
 		}
 	}
 #endif
-
-
-	if ( -1 == close(i2cHandle) ) {
-		fprintf(stderr,"# Error closing I2C device.\n# %s\n# Exiting...\n",strerror(errno));
-		exit(1);
-	}
-	
-	fprintf(stderr,"# Done...\n");
-	
-	exit(0);
-}
-
