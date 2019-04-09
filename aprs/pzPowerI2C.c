@@ -159,7 +159,7 @@ int main(int argc, char **argv) {
 	/* read pzPowerI2C registers in all cases */
 	if ( 1 ) {
 		int startAddress=0;
-		int nRegisters=60;
+		int nRegisters=42;
 
 		/* address high byte */
 		txBuffer[0] = ((startAddress>>8) & 0b00011111);
@@ -168,6 +168,8 @@ int main(int argc, char **argv) {
 
 		/* write read address */
 		opResult = write(i2cHandle, txBuffer, 2);
+
+
 		if (opResult != 2) {
 			fprintf(stderr,"# No ACK! Exiting...\n");
 			exit(2);
@@ -180,7 +182,7 @@ int main(int argc, char **argv) {
 
 		/* results */
 		for ( i=0 ; i<nRegisters ; i++ ) {
-			fprintf(stderr,"# reg[%03d] = 0x%02x (%d)",i,rxBuffer[i],rxBuffer[i]);
+			fprintf(stderr,"# reg[%03d] = 0x%04x (%4d)",i,rxBuffer[i],rxBuffer[i]);
 
 			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
 				fprintf(stderr," '%c'",rxBuffer[i]);
