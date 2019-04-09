@@ -180,7 +180,13 @@ int main(int argc, char **argv) {
 
 		/* results */
 		for ( i=0 ; i<nRegisters ; i++ ) {
-			fprintf(stderr,"# reg[%03d] = 0x%02x (%d)\n",i,rxBuffer[i],rxBuffer[i]);
+			fprintf(stderr,"# reg[%03d] = 0x%02x (%d)",i,rxBuffer[i],rxBuffer[i]);
+
+			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
+				fprintf(stderr," '%c'",rxBuffer[i]);
+			} 
+			fprintf(stderr,"\n");
+
 		}
 	}
 
