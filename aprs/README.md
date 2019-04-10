@@ -12,6 +12,11 @@ switch|argument|description
 
 The default I2C address for pzPowerI2C board is `0x1a`. This is defined in [pzPowerI2C.h] (https://github.com/aprsworld/pzPowerI2C/blob/master/pzPowerI2C.h). The convention used in that is shift to the left one bit of what Linux sees. So `0x34` in pzPowerI2C.h `>> 1` becomes `0x1a`.
 
+### requirements
+
+`libjson-c-dev` is required. Install with `sudo apt-get install libjson-c-dev`.
+
+
 switch|argument|description
 ---|---|---
 --power-host-on|seconds|turn on power switch to host (ie Pi) after `seconds` delay. 0 for no delay. 65534 seconds max delay.

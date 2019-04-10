@@ -8,7 +8,10 @@
 #include <stdint.h>
 #include <getopt.h>
 #include <errno.h>
-
+#include <arpa/inet.h>
+#include <math.h>
+#include <json.h>
+ 
 extern char *optarg;
 extern int optind, opterr, optopt;
 
@@ -17,6 +20,79 @@ extern int optind, opterr, optopt;
 
 /* byte capacity of device */
 #define CAPACITY_BYTES 128
+
+double ntcThermistor(double voltage, double beta, double beta25, double rSource, double vSource) {
+	double rt, tKelvin;
+
+	rt = (voltage*rSource)/(vSource-voltage);
+
+	tKelvin=1.0/( (1.0/beta) * log(rt/beta25) + 1.0/298.15);
+
+	return tKelvin-273.15;
+}
+
+void decodeRegisters(uint16_t *rxBuffer) {
+	struct json_object *jobj, *jobj_data,*jobj_configuration;
+	int i;
+ 
+ 
+	/*
+	 * The following create an object and add the question and answer to it.
+	 */
+	jobj = json_object_new_object();
+	jobj_data = json_object_new_object();
+	jobj_configuration = json_object_new_object();
+
+
+	/* data */
+
+	/* input voltage */
+	json_object_object_add(jobj_data, "voltage_in_now", json_object_new_double((40.0/1024.0)*rxBuffer[0]));
+	json_object_object_add(jobj_data, "voltage_in_average", json_object_new_double((40.0/1024.0)*rxBuffer[1]));
+
+	/* temperature of board from onboard thermistor */
+	double t;
+	t=ntcThermistor( rxBuffer[2], 3977, 10000, 10000, 1024);
+	json_object_object_add(jobj_data, "temperature_pcb_now", json_object_new_double(t));
+
+	t=ntcThermistor( rxBuffer[3], 3977, 10000, 10000, 1024);
+	json_object_object_add(jobj_data, "temperature_pcb_average", json_object_new_double(t));
+
+	/* magnetic switch */
+	json_object_object_add(jobj_data,"magnetic_switch_state", json_object_new_boolean(rxBuffer[4]));
+	json_object_object_add(jobj_data,"magnetic_switch_latch", json_object_new_boolean(rxBuffer[5]));
+
+	/* status */
+	json_object_object_add(jobj_data,"sequence_number",       json_object_new_int( rxBuffer[6] ) );
+	json_object_object_add(jobj_data,"interval_milliseconds", json_object_new_int( rxBuffer[7] ) );
+	json_object_object_add(jobj_data,"uptime_minutes",        json_object_new_int( rxBuffer[8] ) );
+	json_object_object_add(jobj_data,"watchdog_seconds",      json_object_new_int( rxBuffer[9] ) );
+
+
+	/* configuration */
+
+	/* serial number (prefix combined with number) */
+	char s[16];
+	sprintf(s,"%C%d",rxBuffer[32],rxBuffer[33]);
+	json_object_object_add(jobj_configuration, "serial_number",            json_object_new_string(s));
+
+	json_object_object_add(jobj_configuration, "adc_sample_ticks",         json_object_new_int( rxBuffer[38] ) );
+	json_object_object_add(jobj_configuration, "watchdog_seconds_max",     json_object_new_int( rxBuffer[39] ) );
+
+	json_object_object_add(jobj_configuration, "power_startup_state_host", json_object_new_int( rxBuffer[41] ) );
+
+
+
+
+	json_object_object_add(jobj, "data", jobj_data);
+	json_object_object_add(jobj, "configuration", jobj_configuration);
+
+ 
+	printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+ 
+	json_object_put(jobj); // Delete the json object
+
+}
 
 int main(int argc, char **argv) {
 	/* optarg */
@@ -39,7 +115,7 @@ int main(int argc, char **argv) {
 
 //	char rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
-	char txBuffer[33+1];	/* transmit buffer (extra byte is address byte) */
+	uint8_t txBuffer[33+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
 
 	/* EEPROM stuff */
@@ -93,7 +169,6 @@ int main(int argc, char **argv) {
 				printf("--power-host-off seconds        turn off power switch to host after seconds delay.\n");
 				printf("--power-net-on   seconds        turn on power switch to external USB device after seconds delay.\n");
 				printf("--power-net-off  seconds        turn off power switch to external USB device after seconds delay.\n");
-				printf("--start-address  address        starting EEPROM address\n");
 				printf("--i2c-device     device         /dev/ entry for I2C-dev device\n");
 				printf("--i2c-address    chip address   hex address of chip\n");
 				printf("--help                          this message\n");
@@ -161,34 +236,40 @@ int main(int argc, char **argv) {
 		int startAddress=0;
 		int nRegisters=42;
 
-		/* address high byte */
-		txBuffer[0] = ((startAddress>>8) & 0b00011111);
-		/* address low byte */
-		txBuffer[1] = (startAddress & 0b11111111);
+		txBuffer[0] = ( (startAddress*2) & 0b11111111);
+
+		fprintf(stderr,"# txBuffer[0]=0x%02x\n",txBuffer[0]);
 
 		/* write read address */
-		opResult = write(i2cHandle, txBuffer, 2);
+		opResult = write(i2cHandle, txBuffer, 1);
 
 
-		if (opResult != 2) {
+		if (opResult != 1) {
 			fprintf(stderr,"# No ACK! Exiting...\n");
 			exit(2);
 		}
 
 		/* read registers into rxBuffer */
 		memset(rxBuffer, 0, sizeof(rxBuffer));
-		opResult = read(i2cHandle, rxBuffer, nRegisters * 2);
-		fprintf(stderr,"# %d bytes read\n",opResult);
+		opResult = read(i2cHandle, rxBuffer, nRegisters*2);
+		fprintf(stderr,"# %d bytes read starting at register %d\n",opResult,startAddress);
 
 		/* results */
 		for ( i=0 ; i<nRegisters ; i++ ) {
-			fprintf(stderr,"# reg[%03d] = 0x%04x (%4d)",i,rxBuffer[i],rxBuffer[i]);
+			/* pzPowerI2C PIC sends high byte and then low byte */
+			rxBuffer[i]=ntohs(rxBuffer[i]);
+
+			fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
 
 			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
 				fprintf(stderr," '%c'",rxBuffer[i]);
 			} 
 			fprintf(stderr,"\n");
 
+		}
+
+		if ( 1 ) {
+			decodeRegisters(rxBuffer);
 		}
 	}
 
@@ -403,7 +484,7 @@ int main(int argc, char **argv) {
 		if ( stringMode ) {
 			for ( i=0 ; i<nBytes && '\0' != rxBuffer[i] ; i++ ) {
 				if ( EOF == fputc(rxBuffer[i],fp) ) {
-					fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",i-1);
+					fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",1Gi-1);
 					exit(1);
 				}
 			}
