@@ -15,6 +15,9 @@
 extern char *optarg;
 extern int optind, opterr, optopt;
 
+/* processed data read from pzPowerI2C at start */
+struct json_object *jobj, *jobj_data,*jobj_configuration;
+
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
 
@@ -55,9 +58,7 @@ double ntcThermistor(double voltage, double beta, double beta25, double rSource,
 }
 
 void decodeRegisters(uint16_t *rxBuffer) {
-	struct json_object *jobj, *jobj_data,*jobj_configuration;
 	int i;
- 
  
 	/*
 	 * The following create an object and add the question and answer to it.
@@ -113,8 +114,6 @@ void decodeRegisters(uint16_t *rxBuffer) {
 
  
 	printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
- 
-	json_object_put(jobj); // Delete the json object
 
 }
 
@@ -128,16 +127,16 @@ int main(int argc, char **argv) {
 	int powerHostOffSeconds = -1;
 	int powerNetOnSeconds = -1;
 	int powerNetOffSeconds = -1;
-	int actionRead = 0;
-	int actionReadSwitch = 0;
-	int actionResetSwitchLatch = 0;
+	static int actionRead = 0;
+	static int actionReadSwitch = 0;
+	static int actionResetSwitchLatch = 0;
+	int exitValue=0;
 
 	/* I2C stuff */
 	char i2cDevice[64];	/* I2C device name */
 	int i2cAddress; 	/* chip address */
 
 
-//	char rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	uint8_t txBuffer[CAPACITY_BYTES+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
@@ -158,13 +157,15 @@ int main(int argc, char **argv) {
 		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 		static struct option long_options[] = {
+			/* flags that we set here */
+			{"read",                no_argument,       &actionRead, 1 },
+			{"read-switch",         no_argument,       &actionReadSwitch, 1 },
+			{"reset-switch-latch",  no_argument,       &actionResetSwitchLatch, 1 },
+			/* arguments and flags we process below */
 		        {"power-host-on",       required_argument, 0, 'P' },
 		        {"power-host-off",      required_argument, 0, 'p' },
 		        {"power-net-on",        required_argument, 0, 'N' },
 		        {"power-net-off",       required_argument, 0, 'n' },
-			{"read",                no_argument,       0, 'r' },
-			{"read-switch",         no_argument,       0, 's' },
-			{"reset-swtitch-latch", no_argument,       0, 'S' },
 		        {"i2c-device",          required_argument, 0, 'i' },
 		        {"i2c-address",         required_argument, 0, 'a' },
 		        {"help",                no_argument,       0, 'h' },
@@ -177,6 +178,7 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
+#if 0
 			case 'r':
 				actionRead=1;
 				break;
@@ -186,6 +188,7 @@ int main(int argc, char **argv) {
 			case 'S':
 				actionResetSwitchLatch=1;
 				break;
+#endif
 			case 'h':
 				printf("switch           argument       description\n");
 				printf("========================================================================================================\n");
@@ -284,26 +287,79 @@ int main(int argc, char **argv) {
 			/* pzPowerI2C PIC sends high byte and then low byte */
 			rxBuffer[i]=ntohs(rxBuffer[i]);
 
+#if 0
 			fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
 
 			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
 				fprintf(stderr," '%c'",rxBuffer[i]);
 			} 
 			fprintf(stderr,"\n");
+#endif
 
 		}
 
-		if ( 1 ) {
-			decodeRegisters(rxBuffer);
+		/* decode data and put into JSON objects */
+		decodeRegisters(rxBuffer);
+	}
+
+	/* read complete. Now go on to to any additional actions */
+
+
+
+	if ( actionReadSwitch ) {
+		/* set exit value based on magnetic switch and magnetic latch status */
+		int magnetic_switch_state=-1;
+		int magnetic_switch_latch=-2;
+
+		json_object *tmp;
+
+		/* read data from JSON object */
+		if ( json_object_object_get_ex(jobj_data, "magnetic_switch_state", &tmp) ) {
+			magnetic_switch_state=json_object_get_boolean(tmp);
 		}
+		if ( json_object_object_get_ex(jobj_data, "magnetic_switch_latch", &tmp) ) {
+			magnetic_switch_latch=json_object_get_boolean(tmp);
+		}
+
+
+		if ( 0==magnetic_switch_state && 0==magnetic_switch_latch ) {
+			exitValue=128;
+		} else if ( 0==magnetic_switch_state && 1==magnetic_switch_latch ) {
+			exitValue=129;
+		} else if ( 1==magnetic_switch_state && 1==magnetic_switch_latch ) {
+			exitValue=130;
+		} else {
+			exitValue=127; /* should not happen */
+		}
+
+		fprintf(stderr,"# actionReadSwitch set exitValue=%d\n",exitValue);
 	}
 
 
+	if ( actionResetSwitchLatch ) {
+		fprintf(stderr,"# actionResetSwitchLatch clearing magnetic switch latch\n");
 
-	opResult = write_word(i2cHandle,5,2345);
-	fprintf(stderr,"# write_word returned %d\n,",opResult);
+		/* writing anything to register 5 clears the magnetic swith latch */
+		opResult = write_word(i2cHandle,5,0);
+		if ( 0 != opResult ) {
+			fprintf(stderr,"# write_word returned %d\n,",opResult);
+			exit(1);
+		}
+	}
+
+	/* write J 430 for serial prefix and serial number */
+	write_word(i2cHandle,32,'J');
+	write_word(i2cHandle,33,430);
 
 
+	/* program clean-up and shut down */
+	/* delete the JSON objects */
+	json_object_put(jobj);
+	json_object_put(jobj_configuration); 
+	json_object_put(jobj_data); 
+
+
+	/* close I2C */
 	if ( -1 == close(i2cHandle) ) {
 		fprintf(stderr,"# Error closing I2C device.\n# %s\n# Exiting...\n",strerror(errno));
 		exit(1);
@@ -313,226 +369,6 @@ int main(int argc, char **argv) {
 
 
 	
-	exit(0);
+	exit(exitValue);
 }
 
-#if 0
-	/* write operation if needed */
-	if ( NULL != inFilename ) {
-		fprintf(stderr,"# input file: %s\n",inFilename);
-		if ( stringMode ) {
-			fprintf(stderr,"# write string mode (stopping at first null)\n");
-		} else {
-		 	fprintf(stderr,"# write binary mode\n");
-		}
-
-		/* open input file */
-		FILE *fp=fopen(inFilename,"r");
-		if ( NULL == fp ) {
-			fprintf(stderr,"# Error opening input file in read mode.\n# %s\n# Exiting...\n",strerror(errno));
-			exit(1);
-		}
-
-		int done=0;
-		int bytesRead=0;
-		int truncated=0;
-		/* 
-		write can start anywhere, but we must write <= page length (32 bytes). So if we want to start at address 30,
-		for example, then we can only write address 30 and address 31 in this page 
-	
-		Examples:
-		address	bytesWeCanWrite
-		0	32 (0, 1, 2, ..., 31)
-		30	2  (30, 31)
-		31	1  (31)
-		32	32 (0, 1, 2, ..., 31)
-
-		bytesWeCanWrite = 32-(address%32)
-
-		*/
-		int address=startAddress;
-		/* EEPROM write is in 32 byte or less chunks. After writing, we must poll for ack to know that write is done */
-		do {
-			int bytesWeCanWrite = 32-(address%32);
-
-//			printf("# start of do {} loop: address=%d bytesWeCanWrite=%d\n",address,bytesWeCanWrite);
-
-			/* read up to bytesWeCanWrite bytes + save two bytes for address */
-			for ( i=2 ; i<(bytesWeCanWrite+2) && bytesRead < nBytes ; i++,bytesRead++ ) {
-				int c=fgetc(fp);
-
-				txBuffer[i] = c;
-
-				if ( (EOF == c) || ( stringMode && '\0' == txBuffer[i] ) ) {
-					done=1;
-					break;
-				}
-			}
-
-			if ( bytesRead >= nBytes ) {
-				fprintf(stderr,"# WARNING: truncating input\n");
-				truncated=1;
-				done=1;
-			}
-
-
-			/* address high byte */
-			txBuffer[0] = ((address>>8) & 0b00011111);
-			/* address low byte */
-			txBuffer[1] = (address & 0b11111111);
-
-			/* write */
-			opResult = write(i2cHandle, txBuffer, i);
-
-			/* poll for acknowledgement so we can write the next page */
-			for ( nTries=0 ; ; nTries++ ) {
-				opResult = write(i2cHandle,txBuffer,0);
-//				fprintf(stderr,"poll nTries=%d opResult=%d\n",nTries,opResult);
-
-				if ( opResult != -1 ) 
-					break;
-
-				if ( nTries >= TIMEOUT_NTRIES ) {
-					fprintf(stderr,"# Timeout while polling for write acknowledgement! Exiting...\n");
-					exit(2);
-				}
-			}
-
-			address += bytesWeCanWrite;
-		} while ( ! done );
-
-		/* 
-		if we need to null terminate, we now do that as a separate write 
-		
-		if we have room left before hitting nBytes limit, we put '\0' after data.
-		if we are out of room, then we replace the last data byte with a '\0'
-		*/
-		if ( stringMode ) {
-			int nullAddress;
-
-
-			if ( truncated ) {
-				/* replace last byte */
-				nullAddress=startAddress+bytesRead-1;
-				fprintf(stderr,"# WARNING: replacing last byte with null at address %d due to --string mode.\n",nullAddress);
-			} else {
-				/* put after last byte */
-				nullAddress=startAddress+bytesRead;
-				bytesRead++;
-				fprintf(stderr,"# adding null after last byte. null at address %d due to --string mode.\n",nullAddress);
-			}
-
-			/* address high byte */
-			txBuffer[0] = ((nullAddress>>8) & 0b00011111);
-			/* address low byte */
-			txBuffer[1] = (nullAddress & 0b11111111);
-			/* null byte */
-			txBuffer[2] = '\0';
-
-			/* write */
-			opResult = write(i2cHandle, txBuffer, 3);
-
-			/* poll for acknowledgement so we can write the next page */
-			for ( nTries=0 ; ; nTries++ ) {
-				opResult = write(i2cHandle,txBuffer,0);
-//				fprintf(stderr,"poll nTries=%d opResult=%d\n",nTries,opResult);
-
-				if ( opResult != -1 ) 
-					break;
-
-				if ( nTries >= TIMEOUT_NTRIES ) {
-					fprintf(stderr,"# Timeout while polling for write acknowledgement! Exiting...\n");
-					exit(2);
-				}
-			}
-		} 
-
-		/* close output file */
-		if ( 0 != fclose(fp) ) {
-			fprintf(stderr,"# Error closing input file.\n# %s\n# Exiting...\n",strerror(errno));
-			exit(1);
-		}
-
-		fprintf(stderr,"# wrote %d bytes to EEPROM\n",bytesRead);
-	}
-
-
-	/* do any requested reading after sets */
-	if ( dumpRead ) {
-
-		/* address high byte */
-		txBuffer[0] = 0x00;
-		/* address low byte */
-		txBuffer[1] = 0x00;
-
-		/* write read address */
-		opResult = write(i2cHandle, txBuffer, 2);
-		if (opResult != 2) {
-			fprintf(stderr,"# No ACK! Exiting...\n");
-			exit(2);
-		}
-
-		/*  read buffer length */
-		memset(rxBuffer, 0, sizeof(rxBuffer));
-		opResult = read(i2cHandle, rxBuffer, sizeof(rxBuffer));
-
-		fprintf(stderr,"# Dump from EEPROM\n");
-		for ( i=0 ; i<sizeof(rxBuffer) ; i++ ) {
-			putchar(rxBuffer[i]);
-		}
-	} else if ( NULL != outFilename ) {
-		fprintf(stderr,"# output file: %s\n",outFilename);
-		if ( stringMode ) {
-			fprintf(stderr,"# read string mode (stopping before first null)\n");
-		} else {
-		 	fprintf(stderr,"# read binary mode\n");
-		}
-
-		/* open output file */
-		FILE *fp=fopen(outFilename,"w");
-		if ( NULL == fp ) {
-			fprintf(stderr,"# Error opening output file in write mode.\n# %s\n# Exiting...\n",strerror(errno));
-			exit(1);
-		}
-
-		/* address high byte */
-		txBuffer[0] = ((startAddress>>8) & 0b00011111);
-		/* address low byte */
-		txBuffer[1] = (startAddress & 0b11111111);
-
-		/* write read address */
-		opResult = write(i2cHandle, txBuffer, 2);
-		if (opResult != 2) {
-			fprintf(stderr,"# No ACK! Exiting...\n");
-			exit(2);
-		}
-
-		/*  read buffer length */
-		memset(rxBuffer, 0, sizeof(rxBuffer));
-		opResult = read(i2cHandle, rxBuffer, nBytes);
-		fprintf(stderr,"# %d bytes read\n",opResult);
-
-		/* write to file */
-		if ( stringMode ) {
-			for ( i=0 ; i<nBytes && '\0' != rxBuffer[i] ; i++ ) {
-				if ( EOF == fputc(rxBuffer[i],fp) ) {
-					fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",1Gi-1);
-					exit(1);
-				}
-			}
-		} else {
-			int written = fwrite(rxBuffer,1,nBytes,fp);
-			if ( written != nBytes ) {
-				fprintf(stderr,"# Error writing EEPROM data to output file. %d bytes written.\n# Exiting...\n",written);
-				exit(1);
-			}
-		}
-		
-
-		/* close output file */
-		if ( 0 != fclose(fp) ) {
-			fprintf(stderr,"# Error closing output file.\n# %s\n# Exiting...\n",strerror(errno));
-			exit(1);
-		}
-	}
-#endif
