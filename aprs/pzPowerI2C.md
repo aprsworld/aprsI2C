@@ -62,9 +62,7 @@ switch|argument|description
 ### --read-switch Exit Status
 exit status|description
 ---|---
-0|undefined (should not happen)
-1|error
-2|Magnetic switch not active AND magnetic latch not set
-3|Magnetic switch active AND magnetic latch not set (should not happen)
-4|Magnetic switch not active AND magnetic latch set
-5|Magnetic switch active AND magnetic latch set
+below 128|Program error.
+128|Magnetic switch not active AND magnetic latch not set
+129|Magnetic switch not active AND magnetic latch set
+130|Magnetic switch active AND magnetic latch set

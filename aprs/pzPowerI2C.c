@@ -21,6 +21,29 @@ extern int optind, opterr, optopt;
 /* byte capacity of device */
 #define CAPACITY_BYTES 128
 
+int write_word(int i2cHandle, uint8_t address, uint16_t value) {
+	uint8_t txBuffer[3];	/* transmit buffer (extra byte is address byte) */
+	int opResult = 0;	/* for error checking of operations */
+
+	/* build tx buffer to send */
+	/* address */
+	txBuffer[0] = address;
+	/* value */
+	txBuffer[1]=(value >> 8) & 0xff;
+	txBuffer[2]=value & 0xff;
+
+	/* write */
+	opResult = write(i2cHandle, txBuffer, sizeof(txBuffer));
+	if ( -1 == opResult ) {
+		fprintf(stderr,"# Error writing to address. %s\n",strerror(errno));
+
+		return -1;
+	}
+
+	return 0;
+}
+
+
 double ntcThermistor(double voltage, double beta, double beta25, double rSource, double vSource) {
 	double rt, tKelvin;
 
@@ -66,7 +89,8 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	json_object_object_add(jobj_data,"sequence_number",       json_object_new_int( rxBuffer[6] ) );
 	json_object_object_add(jobj_data,"interval_milliseconds", json_object_new_int( rxBuffer[7] ) );
 	json_object_object_add(jobj_data,"uptime_minutes",        json_object_new_int( rxBuffer[8] ) );
-	json_object_object_add(jobj_data,"watchdog_seconds",      json_object_new_int( rxBuffer[9] ) );
+	json_object_object_add(jobj_data,"read_watchdog_seconds",      json_object_new_int( rxBuffer[9] ) );
+	json_object_object_add(jobj_data,"write_watchdog_seconds",      json_object_new_int( rxBuffer[10] ) );
 
 
 	/* configuration */
@@ -115,8 +139,9 @@ int main(int argc, char **argv) {
 
 //	char rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
-	uint8_t txBuffer[33+1];	/* transmit buffer (extra byte is address byte) */
+	uint8_t txBuffer[CAPACITY_BYTES+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
+	uint8_t address;
 
 	/* EEPROM stuff */
 	int i, nTries;
@@ -274,12 +299,19 @@ int main(int argc, char **argv) {
 	}
 
 
+
+	opResult = write_word(i2cHandle,5,2345);
+	fprintf(stderr,"# write_word returned %d\n,",opResult);
+
+
 	if ( -1 == close(i2cHandle) ) {
 		fprintf(stderr,"# Error closing I2C device.\n# %s\n# Exiting...\n",strerror(errno));
 		exit(1);
 	}
 	
 	fprintf(stderr,"# Done...\n");
+
+
 	
 	exit(0);
 }
