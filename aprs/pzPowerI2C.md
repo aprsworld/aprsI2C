@@ -56,6 +56,7 @@ switch|argument|description
 ### options for setting board paramaters
 switch|argument|description
 ---|---|---
+--set-serial|new serial|serial prefix (A to Z) combined with serial number 0 to 65535
 
 
 
