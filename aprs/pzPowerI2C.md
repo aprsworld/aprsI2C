@@ -24,7 +24,7 @@ These are used to control the turn off behavior of the host (ie Pi)
 switch|argument|description
 ---|---|---
 --set-command-off|seconds|0 for no delay. 65534 seconds max delay. 65535 to cancel.
---set-command-off-hold-time|seconds for power to be after command. 65534 seconds max
+--set-command-off-hold-time|seconds for power to be off after command. 65534 seconds max
 --disable-read-watchdog|(none)|Disable read watchdog
 --set-read-watchdog-off-threshold|seconds|Power off after `seconds` without an I2C read to pzPowerI2C. 65535 for disable
 --set-read-watchdog-off-hold-time|seconds|seconds for power to be off after watchdog is triggered. 65534 seconds max

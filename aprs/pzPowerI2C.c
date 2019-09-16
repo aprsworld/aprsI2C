@@ -24,6 +24,28 @@ struct json_object *jobj, *jobj_data,*jobj_configuration;
 /* byte capacity of device */
 #define CAPACITY_BYTES 128
 
+/* actions to take */
+typedef struct {
+	int read;
+	int readSwitch;
+	int resetSwitchLatch;
+
+	int setSerial;
+	uint8_t setSerial_prefix;
+	uint16_t setSerial_number;
+	
+
+	int setCommandOff;
+	double setCommandOff_value;
+
+	int setCommandOffHoldTime;
+	int setCommandOffHoldTime_value;
+	
+} struct_action;
+
+/* global structures */
+struct_action action={0};
+
 int write_word(int i2cHandle, uint8_t address, uint16_t value) {
 	uint8_t txBuffer[3];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
@@ -126,22 +148,43 @@ void printUsage(void) {
 	fprintf(stderr,"--help                          this message\n");
 }
 
+void flagProccess(int *flag, char *name) {
+	if ( *flag ) {
+		fprintf(stderr,"# --%s specified twice. Aborting...\n",name);
+		exit(1);
+	}
+
+	*flag=1;
+	fprintf(stderr,"# action for --%s to be taken\n",name);
+}
+
+int rangeCheckInt(char *name, int value, int minValue, int maxValue) {
+	if ( value < minValue || value > maxValue ) {
+		fprintf(stderr,"# --%s value of %d is outside of range of %d to %d. Aborting...\n",name,value,minValue,maxValue);
+		exit(1);
+	}
+
+	fprintf(stderr,"# --%s value set to %d\n",name,value);
+	return value;
+}
+
+double rangeCheckDouble(char *name, double value, double minValue, double maxValue) {
+	if ( value < minValue || value > maxValue ) {
+		fprintf(stderr,"# --%s value of %f is outside of range of %f to %f. Aborting...\n",name,value,minValue,maxValue);
+		exit(1);
+	}
+
+	fprintf(stderr,"# --%s value set to %f\n",name,value);
+	return value;
+}
+
 int main(int argc, char **argv) {
 	/* optarg */
 	int c;
 	int digit_optind = 0;
 
 	/* program flow */
-	int powerHostOnSeconds = -1;
-	int powerHostOffSeconds = -1;
-	int powerNetOnSeconds = -1;
-	int powerNetOffSeconds = -1;
-	static int actionRead = 0;
-	static int actionReadSwitch = 0;
-	static int actionResetSwitchLatch = 0;
-	static int actionSetSerial = 0;
-	uint8_t setSerialPrefix=0;
-	uint16_t setSerialNumber=0;
+
 	int exitValue=0;
 
 	/* I2C stuff */
@@ -162,6 +205,7 @@ int main(int argc, char **argv) {
 
 
 
+
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	i2cAddress=0x1a;		/* default address of pzPower in pzPowerI2C.h */ 	
 
@@ -170,18 +214,17 @@ int main(int argc, char **argv) {
 		int option_index = 0;
 		static struct option long_options[] = {
 			/* flags that we set here */
-			{"read",                no_argument,       0, 260 },
-			{"read-switch",         no_argument,       0, 270 }, 
-			{"reset-switch-latch",  no_argument,       0, 280 },
-		        {"set-serial",          required_argument, 0, 290 },
-		        {"power-host-on",       required_argument, 0, 'P' },
-		        {"power-host-off",      required_argument, 0, 'p' },
-		        {"power-net-on",        required_argument, 0, 'N' },
-		        {"power-net-off",       required_argument, 0, 'n' },
-		        {"i2c-device",          required_argument, 0, 'i' },
-		        {"i2c-address",         required_argument, 0, 'a' },
-		        {"help",                no_argument,       0, 'h' },
-		        {0,                     0,                 0,  0 }
+			{"read",                      no_argument,       0, 260 },
+			{"read-switch",               no_argument,       0, 270 }, 
+			{"reset-switch-latch",        no_argument,       0, 280 },
+		        {"set-serial",                required_argument, 0, 290 },
+			{"set-command-off",           required_argument, 0, 300 },
+			{"set-command-off-hold-time", required_argument, 0, 310},
+
+		        {"i2c-device",                required_argument, 0, 'i' },
+		        {"i2c-address",               required_argument, 0, 'a' },
+		        {"help",                      no_argument,       0, 'h' },
+		        {0,                           0,                 0,  0 }
 		};
 
 		c = getopt_long(argc, argv, "", long_options, &option_index);
@@ -190,56 +233,36 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
-			case 260:
-				if ( actionRead ) {
-					fprintf(stderr,"# --read specified twice. Aborting...\n");
-					exit(1);
-				}
+			/* simple flag sets */
+			case 260: flagProccess(&action.read,"read"); break;
+			case 270: flagProccess(&action.readSwitch,"read-switch"); break;
+			case 280: flagProccess(&action.resetSwitchLatch,"reset-switch-latch"); break;
 
-				actionRead=1;
-
-				break;
-
-			case 270:
-				if ( actionReadSwitch ) {
-					fprintf(stderr,"# --read-switch specified twice. Aborting...\n");
-					exit(1);
-				}
-
-				actionReadSwitch=1;
-
-				break;
-
-			case 280:
-				if ( actionResetSwitchLatch ) {
-					fprintf(stderr,"# --reset-switch-latch specified twice. Aborting...\n");
-					exit(1);
-				}
-
-				actionResetSwitchLatch=1;
-
-				break;
-			
-
+			/* options with arguments */
 			case 290:
-				if ( actionSetSerial ) {
-					fprintf(stderr,"# --set-serial specified twice. Aborting...\n");
-					exit(1);
-				}
+				flagProccess(&action.setSerial,"set-serial"); 
 
-				i = sscanf(optarg,"%c%d",&setSerialPrefix,&j);
+				i = sscanf(optarg,"%c%d",&action.setSerial_prefix,&j);
+				action.setSerial_number=(uint16_t) j;
 
 
-				if ( setSerialPrefix < 'A' || setSerialPrefix > 'Z' || j<0 || j>65535 || 2 != i ) {
+				if ( action.setSerial_prefix < 'A' || action.setSerial_prefix > 'Z' || j<0 || j>65535 || 2 != i ) {
 					fprintf(stderr,"# --set-serial invalid serial number '%s'. Aborting...\n",optarg);
 					exit(1);
 				}
 
-				setSerialNumber=(uint16_t) j;
-				actionSetSerial=1;
+				action.setSerial=1;
 
 				break;
-				
+			case 300:
+				flagProccess(&action.setCommandOff,"set-command-off"); 
+				action.setCommandOff_value = rangeCheckInt("set-command-off",atoi(optarg),0,65534);
+				break;
+			case 310:
+				flagProccess(&action.setCommandOffHoldTime,"set-command-off-hold-time"); 
+				action.setCommandOffHoldTime_value = rangeCheckInt("set-command-off-hold-time",atoi(optarg),1,65534);
+				break;
+
 			case '?':
 				/* getopt error of missing argument or unknown option */
 				exit(1);
@@ -247,6 +270,7 @@ int main(int argc, char **argv) {
 				printUsage();
 				exit(0);	
 				break;
+/*
 			case 'P':
 				powerHostOnSeconds=atoi(optarg);
 				if ( powerHostOnSeconds<0 || powerHostOnSeconds>65534 ) {
@@ -254,27 +278,8 @@ int main(int argc, char **argv) {
 					exit(1);
 				} 
 				break;
-			case 'p':
-				powerHostOffSeconds=atoi(optarg);
-				if ( powerHostOffSeconds<0 || powerHostOffSeconds>65534 ) {
-					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
-					exit(1);
-				} 
-				break;
-			case 'N':
-				powerNetOnSeconds=atoi(optarg);
-				if ( powerNetOnSeconds<0 || powerNetOnSeconds>65534 ) {
-					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
-					exit(1);
-				} 
-				break;
-			case 'n':
-				powerNetOffSeconds=atoi(optarg);
-				if ( powerNetOffSeconds<0 || powerNetOffSeconds>65534 ) {
-					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
-					exit(1);
-				} 
-				break;
+*/
+			/* I2C settings */
 			case 'a':
 				sscanf(optarg,"%x",&i2cAddress);
 				break;
@@ -311,7 +316,7 @@ int main(int argc, char **argv) {
 
 		txBuffer[0] = ( (startAddress*2) & 0b11111111);
 
-		fprintf(stderr,"# txBuffer[0]=0x%02x\n",txBuffer[0]);
+//		fprintf(stderr,"# txBuffer[0]=0x%02x\n",txBuffer[0]);
 
 		/* write read address */
 		opResult = write(i2cHandle, txBuffer, 1);
@@ -325,7 +330,7 @@ int main(int argc, char **argv) {
 		/* read registers into rxBuffer */
 		memset(rxBuffer, 0, sizeof(rxBuffer));
 		opResult = read(i2cHandle, rxBuffer, nRegisters*2);
-		fprintf(stderr,"# %d bytes read starting at register %d\n",opResult,startAddress);
+//		fprintf(stderr,"# %d bytes read starting at register %d\n",opResult,startAddress);
 
 		/* results */
 		for ( i=0 ; i<nRegisters ; i++ ) {
@@ -351,7 +356,7 @@ int main(int argc, char **argv) {
 
 
 
-	if ( actionReadSwitch ) {
+	if ( action.readSwitch ) {
 		/* set exit value based on magnetic switch and magnetic latch status */
 		int magnetic_switch_state=-1;
 		int magnetic_switch_latch=-2;
@@ -381,7 +386,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	if ( actionResetSwitchLatch ) {
+	if ( action.resetSwitchLatch ) {
 		fprintf(stderr,"# actionResetSwitchLatch clearing magnetic switch latch\n");
 
 		/* writing anything to register 5 clears the magnetic swith latch */
@@ -392,10 +397,10 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if ( actionSetSerial ) {
-		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",setSerialPrefix,setSerialNumber);
-		write_word(i2cHandle,32,setSerialPrefix);
-		write_word(i2cHandle,33,setSerialNumber);
+	if ( action.setSerial ) {
+		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",action.setSerial_prefix,action.setSerial_number);
+		write_word(i2cHandle,32,action.setSerial_prefix);
+		write_word(i2cHandle,33,action.setSerial_number);
 	}
 
 
