@@ -117,6 +117,15 @@ void decodeRegisters(uint16_t *rxBuffer) {
 
 }
 
+void printUsage(void) {
+	fprintf(stderr,"Usage:\n\n");
+	fprintf(stderr,"switch           argument       description\n");
+	fprintf(stderr,"========================================================================================================\n");
+	fprintf(stderr,"--i2c-device     device         /dev/ entry for I2C-dev device\n");
+	fprintf(stderr,"--i2c-address    chip address   hex address of chip\n");
+	fprintf(stderr,"--help                          this message\n");
+}
+
 int main(int argc, char **argv) {
 	/* optarg */
 	int c;
@@ -130,6 +139,9 @@ int main(int argc, char **argv) {
 	static int actionRead = 0;
 	static int actionReadSwitch = 0;
 	static int actionResetSwitchLatch = 0;
+	static int actionSetSerial = 0;
+	uint8_t setSerialPrefix=0;
+	uint16_t setSerialNumber=0;
 	int exitValue=0;
 
 	/* I2C stuff */
@@ -143,7 +155,7 @@ int main(int argc, char **argv) {
 	uint8_t address;
 
 	/* EEPROM stuff */
-	int i, nTries;
+	int i,j, nTries;
 
 
 	fprintf(stderr,"# pzPowerI2C utility\n");
@@ -158,10 +170,10 @@ int main(int argc, char **argv) {
 		int option_index = 0;
 		static struct option long_options[] = {
 			/* flags that we set here */
-			{"read",                no_argument,       &actionRead, 1 },
-			{"read-switch",         no_argument,       &actionReadSwitch, 1 },
-			{"reset-switch-latch",  no_argument,       &actionResetSwitchLatch, 1 },
-			/* arguments and flags we process below */
+			{"read",                no_argument,       0, 260 },
+			{"read-switch",         no_argument,       0, 270 }, 
+			{"reset-switch-latch",  no_argument,       0, 280 },
+		        {"set-serial",          required_argument, 0, 290 },
 		        {"power-host-on",       required_argument, 0, 'P' },
 		        {"power-host-off",      required_argument, 0, 'p' },
 		        {"power-net-on",        required_argument, 0, 'N' },
@@ -178,28 +190,61 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
-#if 0
-			case 'r':
+			case 260:
+				if ( actionRead ) {
+					fprintf(stderr,"# --read specified twice. Aborting...\n");
+					exit(1);
+				}
+
 				actionRead=1;
+
 				break;
-			case 's':
+
+			case 270:
+				if ( actionReadSwitch ) {
+					fprintf(stderr,"# --read-switch specified twice. Aborting...\n");
+					exit(1);
+				}
+
 				actionReadSwitch=1;
+
 				break;
-			case 'S':
+
+			case 280:
+				if ( actionResetSwitchLatch ) {
+					fprintf(stderr,"# --reset-switch-latch specified twice. Aborting...\n");
+					exit(1);
+				}
+
 				actionResetSwitchLatch=1;
+
 				break;
-#endif
+			
+
+			case 290:
+				if ( actionSetSerial ) {
+					fprintf(stderr,"# --set-serial specified twice. Aborting...\n");
+					exit(1);
+				}
+
+				i = sscanf(optarg,"%c%d",&setSerialPrefix,&j);
+
+
+				if ( setSerialPrefix < 'A' || setSerialPrefix > 'Z' || j<0 || j>65535 || 2 != i ) {
+					fprintf(stderr,"# --set-serial invalid serial number '%s'. Aborting...\n",optarg);
+					exit(1);
+				}
+
+				setSerialNumber=(uint16_t) j;
+				actionSetSerial=1;
+
+				break;
+				
+			case '?':
+				/* getopt error of missing argument or unknown option */
+				exit(1);
 			case 'h':
-				printf("switch           argument       description\n");
-				printf("========================================================================================================\n");
-				printf("--read           filename       read pzPowerI2C and send JSON formatted data to stdout\n");
-				printf("--power-host-on  seconds        turn on power switch to host after seconds delay.\n");
-				printf("--power-host-off seconds        turn off power switch to host after seconds delay.\n");
-				printf("--power-net-on   seconds        turn on power switch to external USB device after seconds delay.\n");
-				printf("--power-net-off  seconds        turn off power switch to external USB device after seconds delay.\n");
-				printf("--i2c-device     device         /dev/ entry for I2C-dev device\n");
-				printf("--i2c-address    chip address   hex address of chip\n");
-				printf("--help                          this message\n");
+				printUsage();
 				exit(0);	
 				break;
 			case 'P':
@@ -347,9 +392,11 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	/* write J 430 for serial prefix and serial number */
-	write_word(i2cHandle,32,'J');
-	write_word(i2cHandle,33,430);
+	if ( actionSetSerial ) {
+		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",setSerialPrefix,setSerialNumber);
+		write_word(i2cHandle,32,setSerialPrefix);
+		write_word(i2cHandle,33,setSerialNumber);
+	}
 
 
 	/* program clean-up and shut down */
