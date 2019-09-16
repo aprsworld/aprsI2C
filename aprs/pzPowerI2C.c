@@ -40,6 +40,11 @@ typedef struct {
 
 	int setCommandOffHoldTime;
 	int setCommandOffHoldTime_value;
+
+	int disableReadWatchdog;
+
+	int setReadWatchdogOffThreshold;
+	int setReadWatchdogOffThreshold_value;
 	
 } struct_action;
 
@@ -220,6 +225,7 @@ int main(int argc, char **argv) {
 		        {"set-serial",                required_argument, 0, 290 },
 			{"set-command-off",           required_argument, 0, 300 },
 			{"set-command-off-hold-time", required_argument, 0, 310},
+			{"disable-read-watchdog",     no_argument,       0, 320 },
 
 		        {"i2c-device",                required_argument, 0, 'i' },
 		        {"i2c-address",               required_argument, 0, 'a' },
@@ -237,6 +243,7 @@ int main(int argc, char **argv) {
 			case 260: flagProccess(&action.read,"read"); break;
 			case 270: flagProccess(&action.readSwitch,"read-switch"); break;
 			case 280: flagProccess(&action.resetSwitchLatch,"reset-switch-latch"); break;
+			case 320: flagProccess(&action.disableReadWatchdog,"disable-read-watchdog"); break;
 
 			/* options with arguments */
 			case 290:
@@ -270,15 +277,6 @@ int main(int argc, char **argv) {
 				printUsage();
 				exit(0);	
 				break;
-/*
-			case 'P':
-				powerHostOnSeconds=atoi(optarg);
-				if ( powerHostOnSeconds<0 || powerHostOnSeconds>65534 ) {
-					fprintf(stderr,"# delay seconds out of range. (0 (no delay) to 65534 seconds)\n# Exiting...\n");
-					exit(1);
-				} 
-				break;
-*/
 			/* I2C settings */
 			case 'a':
 				sscanf(optarg,"%x",&i2cAddress);
@@ -402,6 +400,25 @@ int main(int argc, char **argv) {
 		write_word(i2cHandle,32,action.setSerial_prefix);
 		write_word(i2cHandle,33,action.setSerial_number);
 	}
+
+	if ( action.setCommandOff ) {
+		/* TODO simple write */
+	}
+
+	if ( action.setCommandOffHoldTime ) {
+		/* TODO simple write */
+
+	}
+
+	if ( action.disableReadWatchdog || action.setReadWatchdogOffThreshold ) {
+		/* disable read watchdog is the same as setting the threshold to 65535 */
+		if ( action.disableReadWatchdog )
+			action.setReadWatchdogOffThreshold_value=65535;
+
+		/* TODO simple write */
+	
+	}
+
 
 
 	/* program clean-up and shut down */
