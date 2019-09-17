@@ -62,7 +62,7 @@ switch|argument|description
 ---|---|---
 --param|value|`save` or `defaults` or `reset_cpu` or value in the range of 0 to 65535
 --set-serial|new serial|serial prefix (A to Z) combined with serial number 0 to 65535
---set-adc-ticks|ticks|10 millisecond (?) ticks between ADC samples. Range TBD
+--set-adc-ticks|ticks|10 millisecond (?) ticks between ADC samples. Range 0 to 65534
 --set-startup-power-on-delay|seconds|Seconds after pzPowerI2C startup before power is turned on to PI. 0 for no delay. 65535 to disable automatic power on
 
 

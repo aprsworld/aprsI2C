@@ -28,6 +28,8 @@ struct json_object *jobj, *jobj_data,*jobj_configuration;
 
 /* actions to take */
 typedef struct {
+	int reRead;
+
 	/* 300 series */
 	int read;
 	int readSwitch;
@@ -78,6 +80,8 @@ int write_word(int i2cHandle, uint8_t address, uint16_t value) {
 	txBuffer[1]=(value >> 8) & 0xff;
 	txBuffer[2]=value & 0xff;
 
+	fprintf(stderr,"# write_word %d to register %d\n",value,address);
+
 	/* write */
 	opResult = write(i2cHandle, txBuffer, sizeof(txBuffer));
 	if ( -1 == opResult ) {
@@ -99,6 +103,7 @@ double ntcThermistor(double voltage, double beta, double beta25, double rSource,
 
 	return tKelvin-273.15;
 }
+
 
 double adcToVoltage(int adc) {
 	double d;
@@ -175,10 +180,56 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	json_object_object_add(jobj, "data", jobj_data);
 	json_object_object_add(jobj, "configuration", jobj_configuration);
 
- 
-	printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
 
 }
+
+void read_pzpoweri2c(int i2cHandle) {
+	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
+	uint8_t txBuffer[1];			/* transmit buffer (extra byte is address byte) */
+	int opResult = 0;	/* for error checking of operations */
+	uint8_t address;
+	int i;
+	int startAddress=0;
+	int nRegisters=42;
+
+	txBuffer[0] = ( (startAddress*2) & 0b11111111);
+
+//	fprintf(stderr,"# txBuffer[0]=0x%02x\n",txBuffer[0]);
+
+	/* write read address */
+	opResult = write(i2cHandle, txBuffer, 1);
+
+
+	if (opResult != 1) {
+		fprintf(stderr,"# No ACK! Exiting...\n");
+		exit(2);
+	}
+
+	/* read registers into rxBuffer */
+	memset(rxBuffer, 0, sizeof(rxBuffer));
+	opResult = read(i2cHandle, rxBuffer, nRegisters*2);
+//	fprintf(stderr,"# %d bytes read starting at register %d\n",opResult,startAddress);
+
+	/* results */
+	for ( i=0 ; i<nRegisters ; i++ ) {
+		/* pzPowerI2C PIC sends high byte and then low byte */
+		rxBuffer[i]=ntohs(rxBuffer[i]);
+
+#if 1
+		fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
+
+		if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
+			fprintf(stderr," '%c'",rxBuffer[i]);
+		} 
+		fprintf(stderr,"\n");
+#endif
+
+	}
+
+	/* decode data and put into JSON objects */
+	decodeRegisters(rxBuffer);
+}
+
 
 void printUsage(void) {
 	fprintf(stderr,"Usage:\n\n");
@@ -251,7 +302,6 @@ int main(int argc, char **argv) {
 	int i2cAddress; 	/* chip address */
 
 
-	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
 	uint8_t txBuffer[CAPACITY_BYTES+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
 	uint8_t address;
@@ -325,7 +375,7 @@ int main(int argc, char **argv) {
 
 			/* 1000 series */
 			case 10000:
-				flagProccess(&action.setSerial,"param"); 
+				flagProccess(&action.param,"param"); 
 
 				if ( 0==strcmp("save",optarg) ) {
 					action.param_value=1;
@@ -355,18 +405,12 @@ int main(int argc, char **argv) {
 				break;
 			case 10020:
 				flagProccess(&action.setAdcTicks,"set-adc-ticks"); 
-				action.setAdcTicks_value = rangeCheckInt("set-adc-ticks",atoi(optarg),1,255);
+				action.setAdcTicks_value = rangeCheckInt("set-adc-ticks",atoi(optarg),1,65534);
 				break;
 			case 10030:
 				flagProccess(&action.setStartupPowerOnDelay,"set-startup-power-on-delay"); 
 				action.setStartupPowerOnDelay_value = rangeCheckInt("set-startup-power-on-delay",atoi(optarg),1,65535);
 				break;
-
-	int setAdcTicks;
-	int setAdcTicks_value;
-
-	int setStartupPowerOnDelay;
-	int setStartupPowerOnDelay_value;
 
 			/* getopt / standard program */
 			case '?':
@@ -399,57 +443,13 @@ int main(int argc, char **argv) {
 		fprintf(stderr,"# Error opening I2C device.\n# %s\n# Exiting...\n",strerror(errno));
 		exit(1);
 	}
-
 	/* not using 10 bit addresses */
 	opResult = ioctl(i2cHandle, I2C_TENBIT, 0);
-
 	/* address of device we will be working with */
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
-	/* read pzPowerI2C registers in all cases */
-	if ( 1 ) {
-		int startAddress=0;
-		int nRegisters=42;
-
-		txBuffer[0] = ( (startAddress*2) & 0b11111111);
-
-//		fprintf(stderr,"# txBuffer[0]=0x%02x\n",txBuffer[0]);
-
-		/* write read address */
-		opResult = write(i2cHandle, txBuffer, 1);
-
-
-		if (opResult != 1) {
-			fprintf(stderr,"# No ACK! Exiting...\n");
-			exit(2);
-		}
-
-		/* read registers into rxBuffer */
-		memset(rxBuffer, 0, sizeof(rxBuffer));
-		opResult = read(i2cHandle, rxBuffer, nRegisters*2);
-//		fprintf(stderr,"# %d bytes read starting at register %d\n",opResult,startAddress);
-
-		/* results */
-		for ( i=0 ; i<nRegisters ; i++ ) {
-			/* pzPowerI2C PIC sends high byte and then low byte */
-			rxBuffer[i]=ntohs(rxBuffer[i]);
-
-#if 1
-			fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
-
-			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
-				fprintf(stderr," '%c'",rxBuffer[i]);
-			} 
-			fprintf(stderr,"\n");
-#endif
-
-		}
-
-		/* decode data and put into JSON objects */
-		decodeRegisters(rxBuffer);
-	}
-
-	/* read complete. Now go on to to any additional actions */
+	/* do initial read and decode of pzPower. We may read and decode again at the end */
+	read_pzpoweri2c(i2cHandle);
 
 
 
@@ -493,6 +493,8 @@ int main(int argc, char **argv) {
 			fprintf(stderr,"# resetSwitchLatch write_word returned %d\n,",opResult);
 			exit(1);
 		}
+
+		action.reRead=1;
 	}
 
 	if ( action.resetWriteWatchdog ) {
@@ -504,16 +506,19 @@ int main(int argc, char **argv) {
 			fprintf(stderr,"# actionResetWriteWatchdog write_word returned %d\n,",opResult);
 			exit(1);
 		}
+		action.reRead=1;
 	}
 
 
 	/* 400's */
 	if ( action.setCommandOff ) {
 		/* TODO simple write */
+		action.reRead=1;
 	}
 
 	if ( action.setCommandOffHoldTime ) {
 		/* TODO simple write */
+		action.reRead=1;
 
 	}
 
@@ -524,38 +529,56 @@ int main(int argc, char **argv) {
 
 		/* TODO simple write */
 	
+		action.reRead=1;
 	}
 
 	/* 10000's */
 	if ( action.param ) {
 		fprintf(stderr,"# Writing %d to param write register\n",action.param_value);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_PARAM_WRITE,action.param_value);
+
+		/* sleep 100 ms to allow parameters to be written to EEPROM */
+		usleep(100000);
+		action.reRead=1;
+
 	}
 
 	if ( action.setSerial ) {
 		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",action.setSerial_prefix,action.setSerial_number);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_SERIAL_PREFIX,action.setSerial_prefix);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_SERIAL_NUMBER,action.setSerial_number);
+		action.reRead=1;
 	}
 
 	if ( action.setAdcTicks ) {
 		fprintf(stderr,"# Writing %d to ADC ticks register\n",action.setAdcTicks_value);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_TICKS_ADC,action.setAdcTicks_value);
+		action.reRead=1;
 	}
 
 	if ( action.setStartupPowerOnDelay ) {
 		fprintf(stderr,"# Writing %d to startup power on delay register\n",action.setStartupPowerOnDelay_value);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_STARTUP_POWER_ON_DELAY,action.setStartupPowerOnDelay_value);
+		action.reRead=1;
 	}
 
 
+	if ( action.reRead ) {
+		/* clear the first read's JSON objects */
+		json_object_put(jobj);
+		json_object_put(jobj_configuration); 
+		json_object_put(jobj_data); 
 
-	/* program clean-up and shut down */
-	/* delete the JSON objects */
+		read_pzpoweri2c(i2cHandle);
+	}
+
+
+	printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+
+	/* release JSON objects */
 	json_object_put(jobj);
 	json_object_put(jobj_configuration); 
 	json_object_put(jobj_data); 
-
 
 	/* close I2C */
 	if ( -1 == close(i2cHandle) ) {
@@ -565,7 +588,7 @@ int main(int argc, char **argv) {
 	
 	fprintf(stderr,"# Done...\n");
 
-	fprintf(stderr,"#### voltageToADC(13.945)=%d\n",voltageToADC(13.945));
+//	fprintf(stderr,"#### voltageToADC(13.945)=%d\n",voltageToADC(13.945));
 
 	
 	exit(exitValue);
