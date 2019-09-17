@@ -16,6 +16,7 @@ switch|argument|description
 --read|(none)|read current state and send to stdout in JSON format
 --read-switch|(none)|read state of magnetic switch and latch and set exit value (see [--read-switch Exit Status](#--read-switch-exit-status))
 --reset-switch-latch|(none)|clear the latch of the magnetic switch. Will happen after `--read` or `--read-switch`
+--reset-write-watchdog|(none)|resets the write watchdog
 
 ### options for setting power off parameters
 
@@ -59,6 +60,7 @@ switch|argument|description
 <!--- 10000 series -->
 switch|argument|description
 ---|---|---
+--param|value|`save` or `defaults` or `reset_cpu` or value in the range of 0 to 65535
 --set-serial|new serial|serial prefix (A to Z) combined with serial number 0 to 65535
 --set-adc-ticks|ticks|10 millisecond (?) ticks between ADC samples. Range TBD
 --set-startup-power-on-delay|seconds|Seconds after pzPowerI2C startup before power is turned on to PI. 0 for no delay. 65535 to disable automatic power on

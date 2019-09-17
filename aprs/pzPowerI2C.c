@@ -11,6 +11,8 @@
 #include <arpa/inet.h>
 #include <math.h>
 #include <json.h>
+
+#include "pzPowerI2C_registers.h"
  
 extern char *optarg;
 extern int optind, opterr, optopt;
@@ -30,6 +32,7 @@ typedef struct {
 	int read;
 	int readSwitch;
 	int resetSwitchLatch;
+	int resetWriteWatchdog;
 
 	/* 400 series */
 	int setCommandOff;
@@ -47,6 +50,9 @@ typedef struct {
 
 
 	/* 10000 series */
+	int param;
+	int param_value;
+
 	int setSerial;
 	uint8_t setSerial_prefix;
 	uint16_t setSerial_number;
@@ -94,6 +100,16 @@ double ntcThermistor(double voltage, double beta, double beta25, double rSource,
 	return tKelvin-273.15;
 }
 
+double adcToVoltage(int adc) {
+	double d;
+
+	/* TODO use calibration value */
+
+	d = (40.0 / 1024.0) * adc;
+
+	return d;
+}
+
 void decodeRegisters(uint16_t *rxBuffer) {
 	int i;
  
@@ -108,41 +124,51 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	/* data */
 
 	/* input voltage */
-	json_object_object_add(jobj_data, "voltage_in_now", json_object_new_double((40.0/1024.0)*rxBuffer[0]));
-	json_object_object_add(jobj_data, "voltage_in_average", json_object_new_double((40.0/1024.0)*rxBuffer[1]));
+	json_object_object_add(jobj_data, "voltage_in_now",json_object_new_double(
+		adcToVoltage(rxBuffer[PZP_I2C_REG_VOLTAGE_INPUT_NOW])
+	));
+
+	json_object_object_add(jobj_data, "voltage_in_average",json_object_new_double(
+		adcToVoltage(rxBuffer[PZP_I2C_REG_VOLTAGE_INPUT_AVG])
+	));
 
 	/* temperature of board from onboard thermistor */
 	double t;
-	t=ntcThermistor( rxBuffer[2], 3977, 10000, 10000, 1024);
+	t=ntcThermistor( rxBuffer[PZP_I2C_REG_TEMPERATURE_BOARD_NOW], 3977, 10000, 10000, 1024);
 	json_object_object_add(jobj_data, "temperature_pcb_now", json_object_new_double(t));
 
-	t=ntcThermistor( rxBuffer[3], 3977, 10000, 10000, 1024);
+	t=ntcThermistor( rxBuffer[PZP_I2C_REG_TEMPERATURE_BOARD_AVG], 3977, 10000, 10000, 1024);
 	json_object_object_add(jobj_data, "temperature_pcb_average", json_object_new_double(t));
 
 	/* magnetic switch */
-	json_object_object_add(jobj_data,"magnetic_switch_state", json_object_new_boolean(rxBuffer[4]));
-	json_object_object_add(jobj_data,"magnetic_switch_latch", json_object_new_boolean(rxBuffer[5]));
+	json_object_object_add(jobj_data,"magnetic_switch_state", json_object_new_boolean(rxBuffer[PZP_I2C_REG_SWITCH_MAGNET_NOW]));
+	json_object_object_add(jobj_data,"magnetic_switch_latch", json_object_new_boolean(rxBuffer[PZP_I2C_REG_SWITCH_MAGNET_LATCH]));
 
 	/* status */
-	json_object_object_add(jobj_data,"sequence_number",       json_object_new_int( rxBuffer[6] ) );
-	json_object_object_add(jobj_data,"interval_milliseconds", json_object_new_int( rxBuffer[7] ) );
-	json_object_object_add(jobj_data,"uptime_minutes",        json_object_new_int( rxBuffer[8] ) );
-	json_object_object_add(jobj_data,"read_watchdog_seconds",      json_object_new_int( rxBuffer[9] ) );
-	json_object_object_add(jobj_data,"write_watchdog_seconds",      json_object_new_int( rxBuffer[10] ) );
+	json_object_object_add(jobj_data,"sequence_number",       json_object_new_int( rxBuffer[PZP_I2C_REG_SEQUENCE_NUMBER] ) );
+	json_object_object_add(jobj_data,"interval_milliseconds", json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_INTERVAL_MILLISECONDS] ) );
+	json_object_object_add(jobj_data,"uptime_minutes",        json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_UPTIME_MINUTES] ) );
+	json_object_object_add(jobj_data,"read_watchdog_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_READ_SECONDS] ) );
+	json_object_object_add(jobj_data,"write_watchdog_seconds",json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS] ) );
 
 
 	/* configuration */
 
 	/* serial number (prefix combined with number) */
 	char s[16];
-	sprintf(s,"%C%d",rxBuffer[32],rxBuffer[33]);
-	json_object_object_add(jobj_configuration, "serial_number",            json_object_new_string(s));
+	sprintf(s,"%C%d",rxBuffer[PZP_I2C_REG_CONFIG_SERIAL_PREFIX],rxBuffer[PZP_I2C_REG_CONFIG_SERIAL_NUMBER]);
+	json_object_object_add(jobj_configuration, "serial_number", json_object_new_string(s));
 
-	json_object_object_add(jobj_configuration, "adc_sample_ticks",         json_object_new_int( rxBuffer[38] ) );
-	json_object_object_add(jobj_configuration, "watchdog_seconds_max",     json_object_new_int( rxBuffer[39] ) );
+	json_object_object_add(jobj_configuration, "hardware_model",   json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_HARDWARE_MODEL] ) );
+	json_object_object_add(jobj_configuration, "hardware_version", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_HARDWARE_VERSION] ) );
 
-	json_object_object_add(jobj_configuration, "power_startup_state_host", json_object_new_int( rxBuffer[41] ) );
+	json_object_object_add(jobj_configuration, "software_model",   json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_MODEL] ) );
+	json_object_object_add(jobj_configuration, "software_version", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_VERSION] ) );
 
+	json_object_object_add(jobj_configuration, "factory_unlocked", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_PARAM_WRITE] ) );
+
+	json_object_object_add(jobj_configuration, "adc_sample_ticks",       json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_TICKS_ADC] ) );
+	json_object_object_add(jobj_configuration, "startup_power_on_delay", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_STARTUP_POWER_ON_DELAY] ) );
 
 
 
@@ -251,6 +277,7 @@ int main(int argc, char **argv) {
 			{"read",                      no_argument,       0, 300 },
 			{"read-switch",               no_argument,       0, 310 }, 
 			{"reset-switch-latch",        no_argument,       0, 320 },
+			{"reset-write-watchdog",      no_argument,       0, 330 },
 
 			/* 400 series commands as defined in pzPowerI2C.md */
 			{"set-command-off",           required_argument, 0, 400 },
@@ -260,9 +287,10 @@ int main(int argc, char **argv) {
 			/* 500 series commands as defined in pzPowerI2C.md */
 
 			/* 10000 series commands as defined in pzPowerI2C.md */
-		        {"set-serial",                required_argument, 0, 10000 },
-		        {"set-adc-ticks",             required_argument, 0, 10010 },
-		        {"set-startup-power-on-delay",required_argument, 0, 10020 },
+		        {"param",                     required_argument, 0, 10000 },
+		        {"set-serial",                required_argument, 0, 10010 },
+		        {"set-adc-ticks",             required_argument, 0, 10020 },
+		        {"set-startup-power-on-delay",required_argument, 0, 10030 },
 
 			/* normal program */
 		        {"i2c-device",                required_argument, 0, 'i' },
@@ -281,6 +309,7 @@ int main(int argc, char **argv) {
 			case 300: flagProccess(&action.read,"read"); break;
 			case 310: flagProccess(&action.readSwitch,"read-switch"); break;
 			case 320: flagProccess(&action.resetSwitchLatch,"reset-switch-latch"); break;
+			case 330: flagProccess(&action.resetWriteWatchdog,"reset-write-watchdog"); break;
 
 
 			/* 400 series */
@@ -296,6 +325,20 @@ int main(int argc, char **argv) {
 
 			/* 1000 series */
 			case 10000:
+				flagProccess(&action.setSerial,"param"); 
+
+				if ( 0==strcmp("save",optarg) ) {
+					action.param_value=1;
+				} else if ( 0==strcmp("defaults",optarg) ) {
+					action.param_value=2;
+				} else if ( 0==strcmp("reset_cpu",optarg) ) {
+					action.param_value=65535;
+				} else {
+					action.param_value = rangeCheckInt("param",atoi(optarg),0,65535);
+				}
+
+				break;
+			case 10010:
 				flagProccess(&action.setSerial,"set-serial"); 
 
 				i = sscanf(optarg,"%c%d",&action.setSerial_prefix,&j);
@@ -310,11 +353,11 @@ int main(int argc, char **argv) {
 				action.setSerial=1;
 
 				break;
-			case 10010:
+			case 10020:
 				flagProccess(&action.setAdcTicks,"set-adc-ticks"); 
 				action.setAdcTicks_value = rangeCheckInt("set-adc-ticks",atoi(optarg),1,255);
 				break;
-			case 10020:
+			case 10030:
 				flagProccess(&action.setStartupPowerOnDelay,"set-startup-power-on-delay"); 
 				action.setStartupPowerOnDelay_value = rangeCheckInt("set-startup-power-on-delay",atoi(optarg),1,65535);
 				break;
@@ -444,10 +487,21 @@ int main(int argc, char **argv) {
 	if ( action.resetSwitchLatch ) {
 		fprintf(stderr,"# actionResetSwitchLatch clearing magnetic switch latch\n");
 
-		/* writing anything to register 5 clears the magnetic swith latch */
-		opResult = write_word(i2cHandle,5,0);
+		/* writing anything to register PZP_I2C_REG_SWITCH_MAGNET_LATCH clears the magnetic swith latch */
+		opResult = write_word(i2cHandle,PZP_I2C_REG_SWITCH_MAGNET_LATCH,0);
 		if ( 0 != opResult ) {
-			fprintf(stderr,"# write_word returned %d\n,",opResult);
+			fprintf(stderr,"# resetSwitchLatch write_word returned %d\n,",opResult);
+			exit(1);
+		}
+	}
+
+	if ( action.resetWriteWatchdog ) {
+		fprintf(stderr,"# actionResetWriteWatchdog\n");
+
+		/* writing anything to register PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS restarts the watchdog */
+		opResult = write_word(i2cHandle,PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS,0);
+		if ( 0 != opResult ) {
+			fprintf(stderr,"# actionResetWriteWatchdog write_word returned %d\n,",opResult);
 			exit(1);
 		}
 	}
@@ -473,18 +527,25 @@ int main(int argc, char **argv) {
 	}
 
 	/* 10000's */
+	if ( action.param ) {
+		fprintf(stderr,"# Writing %d to param write register\n",action.param_value);
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_PARAM_WRITE,action.param_value);
+	}
+
 	if ( action.setSerial ) {
 		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",action.setSerial_prefix,action.setSerial_number);
-		write_word(i2cHandle,32,action.setSerial_prefix);
-		write_word(i2cHandle,33,action.setSerial_number);
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_SERIAL_PREFIX,action.setSerial_prefix);
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_SERIAL_NUMBER,action.setSerial_number);
 	}
 
 	if ( action.setAdcTicks ) {
-		/* TODO simple write */
+		fprintf(stderr,"# Writing %d to ADC ticks register\n",action.setAdcTicks_value);
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_TICKS_ADC,action.setAdcTicks_value);
 	}
 
 	if ( action.setStartupPowerOnDelay ) {
-		/* TODO simple write */
+		fprintf(stderr,"# Writing %d to startup power on delay register\n",action.setStartupPowerOnDelay_value);
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_STARTUP_POWER_ON_DELAY,action.setStartupPowerOnDelay_value);
 	}
 
 
