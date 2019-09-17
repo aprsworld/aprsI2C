@@ -10,6 +10,7 @@ Build with `make`
 
 ## Command line arguments
 ### options for reading status and clearing latches
+<!--- 300 series -->
 switch|argument|description
 ---|---|---
 --read|(none)|read current state and send to stdout in JSON format
@@ -21,6 +22,7 @@ switch|argument|description
 These are used to control the turn off behavior of the host (ie Pi)
 
 #### command and watchdog triggered
+<!--- 400 series -->
 switch|argument|description
 ---|---|---
 --set-command-off|seconds|0 for no delay. 65534 seconds max delay. 65535 to cancel.
@@ -35,6 +37,7 @@ switch|argument|description
 
 
 #### voltage and temperature triggered
+<!--- 500 series -->
 switch|argument|description
 ---|---|---
 --disable-lvd|(none)|Disable low voltage disconnect (LVD)
@@ -51,12 +54,14 @@ switch|argument|description
 --set-htd-off-delay|seconds|Seconds temperature must be above threshold to trigger. 0 for no delay. 65535 to disable HTD
 
 
-### options for setting power on parameters
 
 ### options for setting board paramaters
+<!--- 10000 series -->
 switch|argument|description
 ---|---|---
 --set-serial|new serial|serial prefix (A to Z) combined with serial number 0 to 65535
+--set-adc-ticks|ticks|10 millisecond (?) ticks between ADC samples. Range TBD
+--set-startup-power-on-delay|seconds|Seconds after pzPowerI2C startup before power is turned on to PI. 0 for no delay. 65535 to disable automatic power on
 
 
 

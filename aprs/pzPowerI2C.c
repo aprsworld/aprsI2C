@@ -26,15 +26,12 @@ struct json_object *jobj, *jobj_data,*jobj_configuration;
 
 /* actions to take */
 typedef struct {
+	/* 300 series */
 	int read;
 	int readSwitch;
 	int resetSwitchLatch;
 
-	int setSerial;
-	uint8_t setSerial_prefix;
-	uint16_t setSerial_number;
-	
-
+	/* 400 series */
 	int setCommandOff;
 	double setCommandOff_value;
 
@@ -45,7 +42,20 @@ typedef struct {
 
 	int setReadWatchdogOffThreshold;
 	int setReadWatchdogOffThreshold_value;
-	
+
+	/* 500 series */
+
+
+	/* 10000 series */
+	int setSerial;
+	uint8_t setSerial_prefix;
+	uint16_t setSerial_number;
+
+	int setAdcTicks;
+	int setAdcTicks_value;
+
+	int setStartupPowerOnDelay;
+	int setStartupPowerOnDelay_value;
 } struct_action;
 
 /* global structures */
@@ -183,6 +193,24 @@ double rangeCheckDouble(char *name, double value, double minValue, double maxVal
 	return value;
 }
 
+/* convert voltage (ie 13.8) to ADC reading for this pzPower */
+int voltageToADC(double voltage) {
+	/* TODO: use calibration value from pzPowerI2C */
+	double step = 40.0 / 1024.0;
+	
+	fprintf(stderr,"# voltage=%f step=%f\n",voltage,step);	
+
+	step = voltage / step;
+
+	fprintf(stderr,"# voltage=%f step=%f\n",voltage,step);	
+	
+	step = round(step);
+
+	fprintf(stderr,"# voltage=%f step=%f\n",voltage,step);	
+
+	return (int) step;
+}
+
 int main(int argc, char **argv) {
 	/* optarg */
 	int c;
@@ -219,14 +247,24 @@ int main(int argc, char **argv) {
 		int option_index = 0;
 		static struct option long_options[] = {
 			/* flags that we set here */
-			{"read",                      no_argument,       0, 260 },
-			{"read-switch",               no_argument,       0, 270 }, 
-			{"reset-switch-latch",        no_argument,       0, 280 },
-		        {"set-serial",                required_argument, 0, 290 },
-			{"set-command-off",           required_argument, 0, 300 },
-			{"set-command-off-hold-time", required_argument, 0, 310},
-			{"disable-read-watchdog",     no_argument,       0, 320 },
+			/* 300 series commands as defined in pzPowerI2C.md */
+			{"read",                      no_argument,       0, 300 },
+			{"read-switch",               no_argument,       0, 310 }, 
+			{"reset-switch-latch",        no_argument,       0, 320 },
 
+			/* 400 series commands as defined in pzPowerI2C.md */
+			{"set-command-off",           required_argument, 0, 400 },
+			{"set-command-off-hold-time", required_argument, 0, 410},
+			{"disable-read-watchdog",     no_argument,       0, 420 },
+
+			/* 500 series commands as defined in pzPowerI2C.md */
+
+			/* 10000 series commands as defined in pzPowerI2C.md */
+		        {"set-serial",                required_argument, 0, 10000 },
+		        {"set-adc-ticks",             required_argument, 0, 10010 },
+		        {"set-startup-power-on-delay",required_argument, 0, 10020 },
+
+			/* normal program */
 		        {"i2c-device",                required_argument, 0, 'i' },
 		        {"i2c-address",               required_argument, 0, 'a' },
 		        {"help",                      no_argument,       0, 'h' },
@@ -239,14 +277,25 @@ int main(int argc, char **argv) {
 			break;
 
 		switch (c) {
-			/* simple flag sets */
-			case 260: flagProccess(&action.read,"read"); break;
-			case 270: flagProccess(&action.readSwitch,"read-switch"); break;
-			case 280: flagProccess(&action.resetSwitchLatch,"reset-switch-latch"); break;
-			case 320: flagProccess(&action.disableReadWatchdog,"disable-read-watchdog"); break;
+			/* 300 series */
+			case 300: flagProccess(&action.read,"read"); break;
+			case 310: flagProccess(&action.readSwitch,"read-switch"); break;
+			case 320: flagProccess(&action.resetSwitchLatch,"reset-switch-latch"); break;
 
-			/* options with arguments */
-			case 290:
+
+			/* 400 series */
+			case 400:
+				flagProccess(&action.setCommandOff,"set-command-off"); 
+				action.setCommandOff_value = rangeCheckInt("set-command-off",atoi(optarg),0,65534);
+				break;
+			case 410:
+				flagProccess(&action.setCommandOffHoldTime,"set-command-off-hold-time"); 
+				action.setCommandOffHoldTime_value = rangeCheckInt("set-command-off-hold-time",atoi(optarg),1,65534);
+				break;
+			case 420: flagProccess(&action.disableReadWatchdog,"disable-read-watchdog"); break;
+
+			/* 1000 series */
+			case 10000:
 				flagProccess(&action.setSerial,"set-serial"); 
 
 				i = sscanf(optarg,"%c%d",&action.setSerial_prefix,&j);
@@ -261,15 +310,22 @@ int main(int argc, char **argv) {
 				action.setSerial=1;
 
 				break;
-			case 300:
-				flagProccess(&action.setCommandOff,"set-command-off"); 
-				action.setCommandOff_value = rangeCheckInt("set-command-off",atoi(optarg),0,65534);
+			case 10010:
+				flagProccess(&action.setAdcTicks,"set-adc-ticks"); 
+				action.setAdcTicks_value = rangeCheckInt("set-adc-ticks",atoi(optarg),1,255);
 				break;
-			case 310:
-				flagProccess(&action.setCommandOffHoldTime,"set-command-off-hold-time"); 
-				action.setCommandOffHoldTime_value = rangeCheckInt("set-command-off-hold-time",atoi(optarg),1,65534);
+			case 10020:
+				flagProccess(&action.setStartupPowerOnDelay,"set-startup-power-on-delay"); 
+				action.setStartupPowerOnDelay_value = rangeCheckInt("set-startup-power-on-delay",atoi(optarg),1,65535);
 				break;
 
+	int setAdcTicks;
+	int setAdcTicks_value;
+
+	int setStartupPowerOnDelay;
+	int setStartupPowerOnDelay_value;
+
+			/* getopt / standard program */
 			case '?':
 				/* getopt error of missing argument or unknown option */
 				exit(1);
@@ -335,7 +391,7 @@ int main(int argc, char **argv) {
 			/* pzPowerI2C PIC sends high byte and then low byte */
 			rxBuffer[i]=ntohs(rxBuffer[i]);
 
-#if 0
+#if 1
 			fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
 
 			if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
@@ -354,6 +410,7 @@ int main(int argc, char **argv) {
 
 
 
+	/* 300's */
 	if ( action.readSwitch ) {
 		/* set exit value based on magnetic switch and magnetic latch status */
 		int magnetic_switch_state=-1;
@@ -395,12 +452,8 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if ( action.setSerial ) {
-		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",action.setSerial_prefix,action.setSerial_number);
-		write_word(i2cHandle,32,action.setSerial_prefix);
-		write_word(i2cHandle,33,action.setSerial_number);
-	}
 
+	/* 400's */
 	if ( action.setCommandOff ) {
 		/* TODO simple write */
 	}
@@ -417,6 +470,21 @@ int main(int argc, char **argv) {
 
 		/* TODO simple write */
 	
+	}
+
+	/* 10000's */
+	if ( action.setSerial ) {
+		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",action.setSerial_prefix,action.setSerial_number);
+		write_word(i2cHandle,32,action.setSerial_prefix);
+		write_word(i2cHandle,33,action.setSerial_number);
+	}
+
+	if ( action.setAdcTicks ) {
+		/* TODO simple write */
+	}
+
+	if ( action.setStartupPowerOnDelay ) {
+		/* TODO simple write */
 	}
 
 
@@ -436,6 +504,7 @@ int main(int argc, char **argv) {
 	
 	fprintf(stderr,"# Done...\n");
 
+	fprintf(stderr,"#### voltageToADC(13.945)=%d\n",voltageToADC(13.945));
 
 	
 	exit(exitValue);
