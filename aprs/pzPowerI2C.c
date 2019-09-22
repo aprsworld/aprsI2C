@@ -63,24 +63,24 @@ typedef struct {
 	int disableLVD;
 	
 	int setLVDOffThreshold;
-	int setLVDOffThreshold_value;
+	double setLVDOffThreshold_value;
 
 	int setLVDOffDelay;
 	int setLVDOffDelay_value;
 	
 	int setLVDOnThreshold;
-	int setLVDOnThreshold_value;
+	double setLVDOnThreshold_value;
 
 	int disableHVD;
 	
 	int setHVDOffThreshold;
-	int setHVDOffThreshold_value;
+	double setHVDOffThreshold_value;
 
 	int setHVDOffDelay;
 	int setHVDOffDelay_value;
 	
 	int setHVDOnThreshold;
-	int setHVDOnThreshold_value;
+	double setHVDOnThreshold_value;
 
 	/* 10000 series */
 	int param;
@@ -289,7 +289,7 @@ void read_pzpoweri2c(int i2cHandle) {
 		/* pzPowerI2C PIC sends high byte and then low byte */
 		rxBuffer[i]=ntohs(rxBuffer[i]);
 
-#if 1
+#if 0
 		fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
 
 		if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
