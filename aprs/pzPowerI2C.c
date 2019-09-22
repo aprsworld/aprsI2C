@@ -18,7 +18,7 @@ extern char *optarg;
 extern int optind, opterr, optopt;
 
 /* processed data read from pzPowerI2C at start */
-struct json_object *jobj, *jobj_data,*jobj_configuration;
+struct json_object *jobj, *jobj_data, *jobj_power_off_flags, *jobj_configuration;
 
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
@@ -48,8 +48,39 @@ typedef struct {
 	int setReadWatchdogOffThreshold;
 	int setReadWatchdogOffThreshold_value;
 
-	/* 500 series */
+	int setReadWatchdogOffHoldTime;
+	int setReadWatchdogOffHoldTime_value;
 
+	int disableWriteWatchdog;
+
+	int setWriteWatchdogOffThreshold;
+	int setWriteWatchdogOffThreshold_value;
+
+	int setWriteWatchdogOffHoldTime;
+	int setWriteWatchdogOffHoldTime_value;
+
+	/* 500 series */
+	int disableLVD;
+	
+	int setLVDOffThreshold;
+	int setLVDOffThreshold_value;
+
+	int setLVDOffDelay;
+	int setLVDOffDelay_value;
+	
+	int setLVDOnThreshold;
+	int setLVDOnThreshold_value;
+
+	int disableHVD;
+	
+	int setHVDOffThreshold;
+	int setHVDOffThreshold_value;
+
+	int setHVDOffDelay;
+	int setHVDOffDelay_value;
+	
+	int setHVDOnThreshold;
+	int setHVDOnThreshold_value;
 
 	/* 10000 series */
 	int param;
@@ -69,7 +100,7 @@ typedef struct {
 /* global structures */
 struct_action action={0};
 
-int write_word(int i2cHandle, uint8_t address, uint16_t value) {
+void write_word(int i2cHandle, uint8_t address, uint16_t value) {
 	uint8_t txBuffer[3];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
 
@@ -85,12 +116,10 @@ int write_word(int i2cHandle, uint8_t address, uint16_t value) {
 	/* write */
 	opResult = write(i2cHandle, txBuffer, sizeof(txBuffer));
 	if ( -1 == opResult ) {
-		fprintf(stderr,"# Error writing to address. %s\n",strerror(errno));
+		fprintf(stderr,"# Error writing value %d to address %d. %s\n",value,address,strerror(errno));
 
-		return -1;
+		exit(1);
 	}
-
-	return 0;
 }
 
 
@@ -115,6 +144,12 @@ double adcToVoltage(int adc) {
 	return d;
 }
 
+int voltageToAdc(double voltage) {
+	/* TODO use calibration value */
+
+	return round( voltage / (40.0 / 1024.0) );
+}
+
 void decodeRegisters(uint16_t *rxBuffer) {
 	int i;
  
@@ -123,6 +158,8 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	 */
 	jobj = json_object_new_object();
 	jobj_data = json_object_new_object();
+	jobj_power_off_flags = json_object_new_object();
+
 	jobj_configuration = json_object_new_object();
 
 
@@ -150,17 +187,30 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	json_object_object_add(jobj_data,"magnetic_switch_latch", json_object_new_boolean(rxBuffer[PZP_I2C_REG_SWITCH_MAGNET_LATCH]));
 
 	/* status */
-	json_object_object_add(jobj_data,"sequence_number",       json_object_new_int( rxBuffer[PZP_I2C_REG_SEQUENCE_NUMBER] ) );
-	json_object_object_add(jobj_data,"interval_milliseconds", json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_INTERVAL_MILLISECONDS] ) );
-	json_object_object_add(jobj_data,"uptime_minutes",        json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_UPTIME_MINUTES] ) );
-	json_object_object_add(jobj_data,"read_watchdog_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_READ_SECONDS] ) );
-	json_object_object_add(jobj_data,"write_watchdog_seconds",json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS] ) );
+	json_object_object_add(jobj_data,"sequence_number",           json_object_new_int( rxBuffer[PZP_I2C_REG_SEQUENCE_NUMBER] ) );
+	json_object_object_add(jobj_data,"interval_milliseconds",     json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_INTERVAL_MILLISECONDS] ) );
+	json_object_object_add(jobj_data,"uptime_minutes",            json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_UPTIME_MINUTES] ) );
+	json_object_object_add(jobj_data,"read_watchdog_seconds",     json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_READ_SECONDS] ) );
+	json_object_object_add(jobj_data,"write_watchdog_seconds",    json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS] ) );
+	json_object_object_add(jobj_data,"default_paramaters_written",json_object_new_int( rxBuffer[PZP_I2C_REG_DEFAULT_PARAMS_WRITTEN] ) );
+	json_object_object_add(jobj_data,"command_off_seconds",       json_object_new_int( rxBuffer[PZP_I2C_REG_COMMAND_OFF] ) );
+
+	/* put power off flags in their own sub array */
+	json_object_object_add(jobj_power_off_flags,"value",          json_object_new_int( rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS] ) );
+	json_object_object_add(jobj_power_off_flags,"command",        json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&1));
+	json_object_object_add(jobj_power_off_flags,"read_watchdog",  json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&2));
+	json_object_object_add(jobj_power_off_flags,"write_watchdog", json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&4));
+	json_object_object_add(jobj_power_off_flags,"lvd",            json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&8));
+	json_object_object_add(jobj_power_off_flags,"hvd",            json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&16));
+	json_object_object_add(jobj_power_off_flags,"ltd",            json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&32));
+	json_object_object_add(jobj_power_off_flags,"htd",            json_object_new_boolean(rxBuffer[PZP_I2C_REG_POWER_OFF_FLAGS]&64));
+	json_object_object_add(jobj_data, "power_off_flags", jobj_power_off_flags);
 
 
 	/* configuration */
 
 	/* serial number (prefix combined with number) */
-	char s[16];
+	char s[32];
 	sprintf(s,"%C%d",rxBuffer[PZP_I2C_REG_CONFIG_SERIAL_PREFIX],rxBuffer[PZP_I2C_REG_CONFIG_SERIAL_NUMBER]);
 	json_object_object_add(jobj_configuration, "serial_number", json_object_new_string(s));
 
@@ -170,11 +220,35 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	json_object_object_add(jobj_configuration, "software_model",   json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_MODEL] ) );
 	json_object_object_add(jobj_configuration, "software_version", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_VERSION] ) );
 
+	/* combine software year+2000 with month with day */
+	sprintf(s,"20%02d-%02d-%02d",
+		rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_YEAR],
+		rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_MONTH],
+		rxBuffer[PZP_I2C_REG_CONFIG_SOFTWARE_DAY]
+	);
+	json_object_object_add(jobj_configuration, "software_date", json_object_new_string(s));
+
 	json_object_object_add(jobj_configuration, "factory_unlocked", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_PARAM_WRITE] ) );
 
 	json_object_object_add(jobj_configuration, "adc_sample_ticks",       json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_TICKS_ADC] ) );
-	json_object_object_add(jobj_configuration, "startup_power_on_delay", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_STARTUP_POWER_ON_DELAY] ) );
+	json_object_object_add(jobj_configuration, "startup_power_on_delay_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_STARTUP_POWER_ON_DELAY] ) );
 
+
+	json_object_object_add(jobj_configuration, "startup_power_on_delay_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_STARTUP_POWER_ON_DELAY] ) );
+
+	json_object_object_add(jobj_configuration, "command_off_hold_time_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_COMMAND_OFF_HOLD_TIME] ) );
+	json_object_object_add(jobj_configuration, "read_watchdog_off_threshold_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_READ_WATCHDOG_OFF_THRESHOLD] ) );
+	json_object_object_add(jobj_configuration, "read_watchdog_off_hold_time_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_READ_WATCHDOG_OFF_HOLD_TIME] ) );
+	json_object_object_add(jobj_configuration, "write_watchdog_off_threshold_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_WRITE_WATCHDOG_OFF_THRESHOLD] ) );
+	json_object_object_add(jobj_configuration, "write_watchdog_off_hold_time_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_WRITE_WATCHDOG_OFF_HOLD_TIME] ) );
+
+	json_object_object_add(jobj_configuration, "lvd-off-threshold_volts", json_object_new_double( adcToVoltage(rxBuffer[PZP_I2C_REG_CONFIG_LVD_DISCONNECT_VOLTAGE]) ) );
+	json_object_object_add(jobj_configuration, "lvd-off-delay_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_LVD_DISCONNECT_DELAY] ) );
+	json_object_object_add(jobj_configuration, "lvd-on-threshold_volts", json_object_new_double( adcToVoltage(rxBuffer[PZP_I2C_REG_CONFIG_LVD_RECONNECT_VOLTAGE]) ) );
+
+	json_object_object_add(jobj_configuration, "hvd-off-threshold_volts", json_object_new_double( adcToVoltage(rxBuffer[PZP_I2C_REG_CONFIG_HVD_DISCONNECT_VOLTAGE]) ) );
+	json_object_object_add(jobj_configuration, "hvd-off-delay_seconds", json_object_new_int( rxBuffer[PZP_I2C_REG_CONFIG_HVD_DISCONNECT_DELAY] ) );
+	json_object_object_add(jobj_configuration, "hvd-on-threshold_volts", json_object_new_double( adcToVoltage(rxBuffer[PZP_I2C_REG_CONFIG_HVD_RECONNECT_VOLTAGE]) ) );
 
 
 	json_object_object_add(jobj, "data", jobj_data);
@@ -190,7 +264,7 @@ void read_pzpoweri2c(int i2cHandle) {
 	uint8_t address;
 	int i;
 	int startAddress=0;
-	int nRegisters=42;
+	int nRegisters=64;
 
 	txBuffer[0] = ( (startAddress*2) & 0b11111111);
 
@@ -324,29 +398,42 @@ int main(int argc, char **argv) {
 		static struct option long_options[] = {
 			/* flags that we set here */
 			/* 300 series commands as defined in pzPowerI2C.md */
-			{"read",                      no_argument,       0, 300 },
-			{"read-switch",               no_argument,       0, 310 }, 
-			{"reset-switch-latch",        no_argument,       0, 320 },
-			{"reset-write-watchdog",      no_argument,       0, 330 },
+			{"read",                             no_argument,       0, 300 },
+			{"read-switch",                      no_argument,       0, 310 }, 
+			{"reset-switch-latch",               no_argument,       0, 320 },
+			{"reset-write-watchdog",             no_argument,       0, 330 },
 
 			/* 400 series commands as defined in pzPowerI2C.md */
-			{"set-command-off",           required_argument, 0, 400 },
-			{"set-command-off-hold-time", required_argument, 0, 410},
-			{"disable-read-watchdog",     no_argument,       0, 420 },
+			{"set-command-off",                  required_argument, 0, 400 },
+			{"set-command-off-hold-time",        required_argument, 0, 410 },
+			{"disable-read-watchdog",            no_argument,       0, 420 },
+			{"set-read-watchdog-off-threshold",  required_argument, 0, 430 },
+			{"set-read-watchdog-off-hold-time",  required_argument, 0, 440 },
+			{"set-write-watchdog-off-threshold", required_argument, 0, 450 },
+			{"set-write-watchdog-off-hold-time", required_argument, 0, 460 },
 
 			/* 500 series commands as defined in pzPowerI2C.md */
+			{"disable-lvd",                      no_argument,       0, 500 },
+			{"set-lvd-off-threshold",            required_argument, 0, 510 },
+			{"set-lvd-off-delay",                required_argument, 0, 520 },
+			{"set-lvd-on-threshold",             required_argument, 0, 530 },
+			{"disable-hvd",                      no_argument,       0, 540 },
+			{"set-hvd-off-threshold",            required_argument, 0, 550 },
+			{"set-hvd-off-delay",                required_argument, 0, 560 },
+			{"set-hvd-on-threshold",             required_argument, 0, 570 },
+
 
 			/* 10000 series commands as defined in pzPowerI2C.md */
-		        {"param",                     required_argument, 0, 10000 },
-		        {"set-serial",                required_argument, 0, 10010 },
-		        {"set-adc-ticks",             required_argument, 0, 10020 },
-		        {"set-startup-power-on-delay",required_argument, 0, 10030 },
+		        {"param",                            required_argument, 0, 10000 },
+		        {"set-serial",                       required_argument, 0, 10010 },
+		        {"set-adc-ticks",                    required_argument, 0, 10020 },
+		        {"set-startup-power-on-delay",       required_argument, 0, 10030 },
 
 			/* normal program */
-		        {"i2c-device",                required_argument, 0, 'i' },
-		        {"i2c-address",               required_argument, 0, 'a' },
-		        {"help",                      no_argument,       0, 'h' },
-		        {0,                           0,                 0,  0 }
+		        {"i2c-device",                       required_argument, 0, 'i' },
+		        {"i2c-address",                      required_argument, 0, 'a' },
+		        {"help",                             no_argument,       0, 'h' },
+		        {0,                                  0,                 0,  0 }
 		};
 
 		c = getopt_long(argc, argv, "", long_options, &option_index);
@@ -372,6 +459,51 @@ int main(int argc, char **argv) {
 				action.setCommandOffHoldTime_value = rangeCheckInt("set-command-off-hold-time",atoi(optarg),1,65534);
 				break;
 			case 420: flagProccess(&action.disableReadWatchdog,"disable-read-watchdog"); break;
+			case 430:
+				flagProccess(&action.setReadWatchdogOffThreshold,"set-read-watchdog-off-threshold"); 
+				action.setReadWatchdogOffThreshold_value = rangeCheckInt("set-read-watchdog-off-threshold",atoi(optarg),1,65534);
+				break;
+			case 440:
+				flagProccess(&action.setReadWatchdogOffHoldTime,"set-read-watchdog-off-hold-time"); 
+				action.setReadWatchdogOffHoldTime_value = rangeCheckInt("set-read-watchdog-off-hold-time",atoi(optarg),1,65534);
+				break;
+			case 450:
+				flagProccess(&action.setWriteWatchdogOffThreshold,"set-write-watchdog-off-threshold"); 
+				action.setWriteWatchdogOffThreshold_value = rangeCheckInt("set-write-watchdog-off-threshold",atoi(optarg),1,65534);
+				break;
+			case 460:
+				flagProccess(&action.setWriteWatchdogOffHoldTime,"set-write-watchdog-off-hold-time"); 
+				action.setWriteWatchdogOffHoldTime_value = rangeCheckInt("set-write-watchdog-off-hold-time",atoi(optarg),1,65534);
+				break;
+
+			/* 500 series */
+			case 500: flagProccess(&action.disableLVD,"disable-LVD"); break;
+			case 510:
+				flagProccess(&action.setLVDOffThreshold,"set-lvd-off-threshold"); 
+				action.setLVDOffThreshold_value = rangeCheckDouble("set-lvd-off-threshold",atof(optarg),8.0,40.0);
+				break;
+			case 520:
+				flagProccess(&action.setLVDOffDelay,"set-lvd-off-delay"); 
+				action.setLVDOffDelay_value = rangeCheckInt("set-lvd-off-delay",atoi(optarg),1,65534);
+				break;
+			case 530:
+				flagProccess(&action.setLVDOnThreshold,"set-lvd-on-threshold"); 
+				action.setLVDOnThreshold_value = rangeCheckDouble("set-lvd-on-threshold",atof(optarg),8.0,40.0);
+				break;
+			case 540: flagProccess(&action.disableHVD,"disable-HVD"); break;
+			case 550:
+				flagProccess(&action.setHVDOffThreshold,"set-hvd-off-threshold"); 
+				action.setHVDOffThreshold_value = rangeCheckDouble("set-hvd-off-threshold",atof(optarg),8.0,40.0);
+				break;
+			case 560:
+				flagProccess(&action.setHVDOffDelay,"set-hvd-off-delay"); 
+				action.setHVDOffDelay_value = rangeCheckInt("set-hvd-off-delay",atoi(optarg),1,65534);
+				break;
+			case 570:
+				flagProccess(&action.setHVDOnThreshold,"set-hvd-on-threshold"); 
+				action.setHVDOnThreshold_value = rangeCheckDouble("set-hvd-on-threshold",atof(optarg),8.0,40.0);
+				break;
+
 
 			/* 1000 series */
 			case 10000:
@@ -488,11 +620,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr,"# actionResetSwitchLatch clearing magnetic switch latch\n");
 
 		/* writing anything to register PZP_I2C_REG_SWITCH_MAGNET_LATCH clears the magnetic swith latch */
-		opResult = write_word(i2cHandle,PZP_I2C_REG_SWITCH_MAGNET_LATCH,0);
-		if ( 0 != opResult ) {
-			fprintf(stderr,"# resetSwitchLatch write_word returned %d\n,",opResult);
-			exit(1);
-		}
+		write_word(i2cHandle,PZP_I2C_REG_SWITCH_MAGNET_LATCH,0);
 
 		action.reRead=1;
 	}
@@ -501,25 +629,23 @@ int main(int argc, char **argv) {
 		fprintf(stderr,"# actionResetWriteWatchdog\n");
 
 		/* writing anything to register PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS restarts the watchdog */
-		opResult = write_word(i2cHandle,PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS,0);
-		if ( 0 != opResult ) {
-			fprintf(stderr,"# actionResetWriteWatchdog write_word returned %d\n,",opResult);
-			exit(1);
-		}
+		write_word(i2cHandle,PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS,0);
+
 		action.reRead=1;
 	}
 
 
 	/* 400's */
 	if ( action.setCommandOff ) {
-		/* TODO simple write */
+		write_word(i2cHandle,PZP_I2C_REG_COMMAND_OFF,action.setCommandOff_value);
+
 		action.reRead=1;
 	}
 
 	if ( action.setCommandOffHoldTime ) {
-		/* TODO simple write */
-		action.reRead=1;
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_COMMAND_OFF_HOLD_TIME,action.setCommandOffHoldTime_value);
 
+		action.reRead=1;
 	}
 
 	if ( action.disableReadWatchdog || action.setReadWatchdogOffThreshold ) {
@@ -527,10 +653,77 @@ int main(int argc, char **argv) {
 		if ( action.disableReadWatchdog )
 			action.setReadWatchdogOffThreshold_value=65535;
 
-		/* TODO simple write */
-	
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_READ_WATCHDOG_OFF_THRESHOLD,action.setReadWatchdogOffThreshold_value);
+
 		action.reRead=1;
 	}
+
+	if ( action.setReadWatchdogOffHoldTime ) {
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_READ_WATCHDOG_OFF_HOLD_TIME,action.setReadWatchdogOffHoldTime_value);
+
+		action.reRead=1;
+	}
+
+	if ( action.disableWriteWatchdog || action.setWriteWatchdogOffThreshold ) {
+		/* disable write watchdog is the same as setting the threshold to 65535 */
+		if ( action.disableWriteWatchdog )
+			action.setWriteWatchdogOffThreshold_value=65535;
+
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_WRITE_WATCHDOG_OFF_THRESHOLD,action.setWriteWatchdogOffThreshold_value);
+
+		action.reRead=1;
+	}
+
+	if ( action.setWriteWatchdogOffHoldTime ) {
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_WRITE_WATCHDOG_OFF_HOLD_TIME,action.setWriteWatchdogOffHoldTime_value);
+
+		action.reRead=1;
+	}
+
+	if ( action.disableLVD || action.setLVDOffDelay ) {
+		/* disable LVD is the same as setting the off delay to 65535 */
+		if ( action.disableLVD )
+			action.setLVDOffDelay_value=65535;
+
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_LVD_DISCONNECT_DELAY,action.setLVDOffDelay_value);
+
+		action.reRead=1;
+	}
+
+	if ( action.setLVDOffThreshold ) {
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_LVD_DISCONNECT_VOLTAGE,voltageToAdc(action.setLVDOffThreshold_value));
+
+		action.reRead=1;
+	}
+
+	if ( action.setLVDOnThreshold ) {
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_LVD_RECONNECT_VOLTAGE,voltageToAdc(action.setLVDOnThreshold_value));
+
+		action.reRead=1;
+	}
+
+	if ( action.disableHVD || action.setHVDOffDelay ) {
+		/* disable HVD is the same as setting the off delay to 65535 */
+		if ( action.disableHVD )
+			action.setHVDOffDelay_value=65535;
+
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_HVD_DISCONNECT_DELAY,action.setHVDOffDelay_value);
+
+		action.reRead=1;
+	}
+
+	if ( action.setHVDOffThreshold ) {
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_HVD_DISCONNECT_VOLTAGE,voltageToAdc(action.setHVDOffThreshold_value));
+
+		action.reRead=1;
+	}
+
+	if ( action.setHVDOnThreshold ) {
+		write_word(i2cHandle,PZP_I2C_REG_CONFIG_HVD_RECONNECT_VOLTAGE,voltageToAdc(action.setHVDOnThreshold_value));
+
+		action.reRead=1;
+	}
+
 
 	/* 10000's */
 	if ( action.param ) {
@@ -539,20 +732,22 @@ int main(int argc, char **argv) {
 
 		/* sleep 100 ms to allow parameters to be written to EEPROM */
 		usleep(100000);
-		action.reRead=1;
 
+		action.reRead=1;
 	}
 
 	if ( action.setSerial ) {
 		fprintf(stderr,"# Setting board serial number serialPrefix='%c' serialNumber='%d'\n",action.setSerial_prefix,action.setSerial_number);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_SERIAL_PREFIX,action.setSerial_prefix);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_SERIAL_NUMBER,action.setSerial_number);
+
 		action.reRead=1;
 	}
 
 	if ( action.setAdcTicks ) {
 		fprintf(stderr,"# Writing %d to ADC ticks register\n",action.setAdcTicks_value);
 		write_word(i2cHandle,PZP_I2C_REG_CONFIG_TICKS_ADC,action.setAdcTicks_value);
+
 		action.reRead=1;
 	}
 
@@ -578,6 +773,7 @@ int main(int argc, char **argv) {
 	/* release JSON objects */
 	json_object_put(jobj);
 	json_object_put(jobj_configuration); 
+	json_object_put(jobj_power_off_flags); 
 	json_object_put(jobj_data); 
 
 	/* close I2C */

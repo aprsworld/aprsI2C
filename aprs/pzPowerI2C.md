@@ -43,7 +43,12 @@ switch|argument|description
 ---|---|---
 --disable-lvd|(none)|Disable low voltage disconnect (LVD)
 --set-lvd-off-threshold|voltage|voltage for LVD
---set-lvd-off-delay|seconds|Seconds voltage must be below threshold to trigger. 0 for no delay. 65535 to disable LVD
+--set-lvd-off-delay|seconds|Seconds voltage must be below off threshold to trigger. 0 for no delay. 65535 to disable LVD
+--set-lvd-on-threshold|voltage|voltage for immediate reconnect
+
+<!--- 500 series not yet implemented -->
+switch|argument|description
+---|---|---
 --disable-hvd|(none)|Disable high voltage disconnect (HVD)
 --set-hvd-off-threshold|voltage|voltage for HVD
 --set-hvd-off-delay|seconds|Seconds voltage must be above theshold to trigger. 0 for no delay. 65535 to disable HVD
@@ -53,7 +58,6 @@ switch|argument|description
 --disable-htd|(none)|Disable high temperature disconnect (HTD)
 --set-htd-off-threshold|temperature|temperature for HTD
 --set-htd-off-delay|seconds|Seconds temperature must be above threshold to trigger. 0 for no delay. 65535 to disable HTD
-
 
 
 ### options for setting board paramaters
