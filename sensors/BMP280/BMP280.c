@@ -22,9 +22,10 @@ void printUsage(void) {
 	fprintf(stderr,"Usage:\n\n");
 	fprintf(stderr,"switch           argument       description\n");
 	fprintf(stderr,"========================================================================================================\n");
-	fprintf(stderr,"--i2c-device     device         /dev/ entry for I2C-dev device\n");
-	fprintf(stderr,"--i2c-address    chip address   hex address of chip\n");
-	fprintf(stderr,"--help                          this message\n");
+	fprintf(stderr,"--i2c-device             device         /dev/ entry for I2C-dev device\n");
+	fprintf(stderr,"--i2c-address            chip address   hex address of chip\n");
+	fprintf(stderr,"--json-enclosing-array   array name     wrap data array\n");
+	fprintf(stderr,"--help                                  this message\n");
 }
 
 int main(int argc, char **argv) {
@@ -39,7 +40,8 @@ int main(int argc, char **argv) {
 	int opResult = 0;	/* for error checking of operations */
 
 	/* JSON stuff */
-	struct json_object *jobj;
+	struct json_object *jobj,*jobj_data;
+	char jsonEnclosingArray[256];
 
 
 	fprintf(stderr,"# BMP280 read utility\n");
@@ -47,11 +49,14 @@ int main(int argc, char **argv) {
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
 
+	strcpy(jsonEnclosingArray,"BMP280"); 
+
 	while (1) {
 		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 		static struct option long_options[] = {
 			/* normal program */
+		        {"json-enclosing-array",             required_argument, 0, 'j' },
 		        {"i2c-device",                       required_argument, 0, 'i' },
 		        {"i2c-address",                      required_argument, 0, 'a' },
 		        {"help",                             no_argument,       0, 'h' },
@@ -79,6 +84,11 @@ int main(int argc, char **argv) {
 			case 'i':
 				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
 				i2cDevice[sizeof(i2cDevice)-1]='\0';
+				break;
+			/* JSON settings */
+			case 'j':
+				strncpy(jsonEnclosingArray,optarg,sizeof(jsonEnclosingArray)-1);
+				jsonEnclosingArray[sizeof(jsonEnclosingArray)-1]='\0';
 				break;
 		}
 	}
@@ -204,17 +214,25 @@ int main(int argc, char **argv) {
 	var2 = p * ((double) dig_P8) / 32768.0;
 	double pressureHPA = (p + (var1 + var2 + ((double)dig_P7)) / 16.0) / 100;
 	
-	/* put data in JSON */
+	/* setup JSON objects */
 	jobj = json_object_new_object();
+	jobj_data = json_object_new_object();
 
-	json_object_object_add(jobj, "pressure_HPA", json_object_new_double(pressureHPA));
-	json_object_object_add(jobj, "temperature_C", json_object_new_double(temperatureC));
+	/* put data in JSON */
+	json_object_object_add(jobj_data, "pressure_HPA", json_object_new_double(pressureHPA));
+	json_object_object_add(jobj_data, "temperature_C", json_object_new_double(temperatureC));
+
+	json_object_object_add(jobj, jsonEnclosingArray, jobj_data);
 
 
-	/* print JSON */
-	printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+	if ( strlen(jsonEnclosingArray) > 0 ) {
+		printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+	} else {
+		printf("%s\n", json_object_to_json_string_ext(jobj_data, JSON_C_TO_STRING_PRETTY));
+	}
 
 	/* release JSON object */
+	json_object_put(jobj_data);
 	json_object_put(jobj);
 
 	/* close I2C */
