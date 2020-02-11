@@ -40,3 +40,7 @@ Utilities for reading and writing text strings and binary data from I2C EEPROMs 
 ## RTC (Real Time Clock)
 
 All RTC utilities can read a time and set a time. APRS World uses ISO 8601 format. Speficially the MySQL style with a `' '` between date and time. `yyyy-MM-dd HH:mm:ss`
+
+## Sensors
+
+Sensor ICs such as pressure and inertial measurement.
