@@ -17,6 +17,8 @@ https://github.com/LanderU/BMP280/blob/master/BMP280.c
 #include <errno.h>
 #include <getopt.h>
 #include <sys/time.h>
+#include <sys/time.h>
+#include <time.h>
 
 static char jsonEnclosingArray[256];
 
@@ -35,9 +37,13 @@ static uint64_t microtime(void) {
 	return ((uint64_t)time.tv_sec * 1000000) + time.tv_usec;
 }
 static void sample(int i2cHandle) {
-	uint64_t microtime_now = microtime();
+	struct timeval time;
 	char buffer[32];
 	char buff1[32];
+	char timestamp[32];
+	struct tm *now;
+
+	gettimeofday(&time, NULL); 
 	/* JSON stuff */
 	struct json_object *jobj,*jobj_data;
 
@@ -146,11 +152,17 @@ static void sample(int i2cHandle) {
 	jobj_data = json_object_new_object();
 
 	/* put data in JSON */
-	snprintf(buffer,sizeof(buffer),"%lu",microtime_now/1000000);	// formatting need work
-	snprintf(buff1,sizeof(buff1),"%06lu",microtime_now%1000000);
-	strcat(buffer,buff1);
+	now = localtime(&time.tv_sec);
+        if ( 0 == now ) {
+                fprintf(stderr,"# error calling localtime() %s",strerror(errno));
+                exit(1);
+        }
+        snprintf(timestamp,sizeof(timestamp),"%04d-%02d-%02d %02d:%02d:%02d.%03ld",
+                1900 + now->tm_year,1 + now->tm_mon, now->tm_mday,now->tm_hour,now->tm_min,now->tm_sec,time.tv_usec/1000);
 
-	json_object_object_add(jobj_data,"epochMicroseconds",json_object_new_string(buffer));
+
+
+	json_object_object_add(jobj_data,"date",json_object_new_string(timestamp));
 	json_object_object_add(jobj_data, "pressure_HPA", json_object_new_double(pressureHPA));
 	json_object_object_add(jobj_data, "temperature_C", json_object_new_double(temperatureC));
 
