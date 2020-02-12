@@ -16,7 +16,9 @@ https://github.com/LanderU/BMP280/blob/master/BMP280.c
 #include <string.h>
 #include <errno.h>
 #include <getopt.h>
+#include <sys/time.h>
 
+static char jsonEnclosingArray[256];
 
 void printUsage(void) {
 	fprintf(stderr,"Usage:\n\n");
@@ -27,92 +29,17 @@ void printUsage(void) {
 	fprintf(stderr,"--json-enclosing-array   array name     wrap data array\n");
 	fprintf(stderr,"--help                                  this message\n");
 }
-
-int main(int argc, char **argv) {
-	/* optarg */
-	int c;
-	int digit_optind = 0;
-
-	/* I2C stuff */
-	char i2cDevice[64];	/* I2C device name */
-	int i2cAddress; 	/* chip address */
-	int i2cHandle;
-	int opResult = 0;	/* for error checking of operations */
-
+static uint64_t microtime(void) {
+	struct timeval time;
+	gettimeofday(&time, NULL); 
+	return ((uint64_t)time.tv_sec * 1000000) + time.tv_usec;
+}
+static void sample(int i2cHandle) {
+	uint64_t microtime_now = microtime();
+	char buffer[32];
+	char buff1[32];
 	/* JSON stuff */
 	struct json_object *jobj,*jobj_data;
-	char jsonEnclosingArray[256];
-
-
-	fprintf(stderr,"# BMP280 read utility\n");
-
-	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
-	i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
-
-	strcpy(jsonEnclosingArray,"BMP280"); 
-
-	while (1) {
-		int this_option_optind = optind ? optind : 1;
-		int option_index = 0;
-		static struct option long_options[] = {
-			/* normal program */
-		        {"json-enclosing-array",             required_argument, 0, 'j' },
-		        {"i2c-device",                       required_argument, 0, 'i' },
-		        {"i2c-address",                      required_argument, 0, 'a' },
-		        {"help",                             no_argument,       0, 'h' },
-		        {0,                                  0,                 0,  0 }
-		};
-
-		c = getopt_long(argc, argv, "", long_options, &option_index);
-
-		if (c == -1)
-			break;
-
-		switch (c) {
-			/* getopt / standard program */
-			case '?':
-				/* getopt error of missing argument or unknown option */
-				exit(1);
-			case 'h':
-				printUsage();
-				exit(0);	
-				break;
-			/* I2C settings */
-			case 'a':
-				sscanf(optarg,"%x",&i2cAddress);
-				break;
-			case 'i':
-				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
-				i2cDevice[sizeof(i2cDevice)-1]='\0';
-				break;
-			/* JSON settings */
-			case 'j':
-				strncpy(jsonEnclosingArray,optarg,sizeof(jsonEnclosingArray)-1);
-				jsonEnclosingArray[sizeof(jsonEnclosingArray)-1]='\0';
-				break;
-		}
-	}
-
-	/* start-up verbosity */
-	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
-	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
-
-
-	/* Open I2C bus */
-	i2cHandle = open(i2cDevice, O_RDWR);
-
-	if ( -1 == i2cHandle ) {
-		fprintf(stderr,"# Error opening I2C device.\n# %s\n# Exiting...\n",strerror(errno));
-		exit(1);
-	}
-	/* not using 10 bit addresses */
-	opResult = ioctl(i2cHandle, I2C_TENBIT, 0);
-	/* address of device we will be working with */
-	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
-
-
-
-//int BMP280_make_int(
 
 	// Read 24 bytes of data from address(0x88)
 	uint8_t reg[1] = {0x88};
@@ -180,7 +107,7 @@ int main(int argc, char **argv) {
 	config[0] = 0xF5;
 	config[1] = 0xA0;
 	write(i2cHandle, config, 2);
-	sleep(1);
+	// sleep(1);
 	
 	// Read 8 bytes of data from register(0xF7)
 	// pressure msb1, pressure msb, pressure lsb, temp msb1, temp msb, temp lsb, humidity lsb, humidity msb
@@ -219,6 +146,11 @@ int main(int argc, char **argv) {
 	jobj_data = json_object_new_object();
 
 	/* put data in JSON */
+	snprintf(buffer,sizeof(buffer),"%lu",microtime_now/1000000);	// formatting need work
+	snprintf(buff1,sizeof(buff1),"%06lu",microtime_now%1000000);
+	strcat(buffer,buff1);
+
+	json_object_object_add(jobj_data,"epochMicroseconds",json_object_new_string(buffer));
 	json_object_object_add(jobj_data, "pressure_HPA", json_object_new_double(pressureHPA));
 	json_object_object_add(jobj_data, "temperature_C", json_object_new_double(temperatureC));
 
@@ -234,6 +166,101 @@ int main(int argc, char **argv) {
 	/* release JSON object */
 	json_object_put(jobj_data);
 	json_object_put(jobj);
+}
+
+int main(int argc, char **argv) {
+	/* optarg */
+	int c;
+	int digit_optind = 0;
+
+	/* I2C stuff */
+	char i2cDevice[64];	/* I2C device name */
+	int i2cAddress; 	/* chip address */
+	int i2cHandle;
+	int opResult = 0;	/* for error checking of operations */
+	int samplingInterval = 500;	// milliseconds;
+
+
+
+	fprintf(stderr,"# BMP280 read utility\n");
+
+	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
+	i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
+
+	strcpy(jsonEnclosingArray,"BMP280"); 
+
+	while (1) {
+		int this_option_optind = optind ? optind : 1;
+		int option_index = 0;
+		static struct option long_options[] = {
+			/* normal program */
+		        {"json-enclosing-array",             required_argument, 0, 'j' },
+		        {"i2c-device",                       required_argument, 0, 'i' },
+		        {"i2c-address",                      required_argument, 0, 'a' },
+		        {"help",                             no_argument,       0, 'h' },
+		        {"samplingInterval",                 required_argument, 0, 's' },
+		        {0,                                  0,                 0,  0 }
+		};
+
+		c = getopt_long(argc, argv, "s:", long_options, &option_index);
+
+		if (c == -1)
+			break;
+
+		switch (c) {
+			case 's':
+				samplingInterval = atoi(optarg);
+				break;
+			/* getopt / standard program */
+			case '?':
+				/* getopt error of missing argument or unknown option */
+				exit(1);
+			case 'h':
+				printUsage();
+				exit(0);	
+				break;
+			/* I2C settings */
+			case 'a':
+				sscanf(optarg,"%x",&i2cAddress);
+				break;
+			case 'i':
+				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
+				i2cDevice[sizeof(i2cDevice)-1]='\0';
+				break;
+			/* JSON settings */
+			case 'j':
+				strncpy(jsonEnclosingArray,optarg,sizeof(jsonEnclosingArray)-1);
+				jsonEnclosingArray[sizeof(jsonEnclosingArray)-1]='\0';
+				break;
+		}
+	}
+
+	/* start-up verbosity */
+	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
+	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
+
+
+	/* Open I2C bus */
+	i2cHandle = open(i2cDevice, O_RDWR);
+
+	if ( -1 == i2cHandle ) {
+		fprintf(stderr,"# Error opening I2C device.\n# %s\n# Exiting...\n",strerror(errno));
+		exit(1);
+	}
+	/* not using 10 bit addresses */
+	opResult = ioctl(i2cHandle, I2C_TENBIT, 0);
+	/* address of device we will be working with */
+	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
+
+
+
+//int BMP280_make_int(
+	fprintf(stderr,"# samplingInterval = %d mSeconds\n",samplingInterval);
+
+	while ( 1 ) {
+		sample(i2cHandle);
+		usleep(1000*samplingInterval);
+	}
 
 	/* close I2C */
 	if ( -1 == close(i2cHandle) ) {
