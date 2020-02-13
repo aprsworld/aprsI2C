@@ -18,6 +18,26 @@ https://github.com/LanderU/BMP280/blob/master/BMP280.c
 #include <getopt.h>
 #include <sys/time.h>
 #include <time.h>
+#include <mosquitto.h>
+#include "local.h"
+
+#define DT 0.02         // [s/loop] loop period. 20ms
+#define AA 0.97         // complementary filter constant
+
+#define A_GAIN 0.0573    // [deg/LSB]
+#define G_GAIN 0.070     // [deg/s/LSB]
+#define RAD_TO_DEG 57.29578
+#define M_PI 3.14159265358979323846
+
+int outputDebug=0;
+
+static int mqtt_port=1883;
+static char mqtt_host[256];
+static char mqtt_topic[256];
+static struct mosquitto *mosq;
+
+static void _mosquitto_shutdown(void);
+
 
 /* JSON stuff */
 static char jsonEnclosingArray[256];
@@ -41,6 +61,12 @@ void printUsage(void) {
 	fprintf(stderr,"--i2c-device             device         /dev/ entry for I2C-dev device\n");
 	fprintf(stderr,"--i2c-address            chip address   hex address of chip\n");
 	fprintf(stderr,"--json-enclosing-array   array name     wrap data array\n");
+	fprintf(stderr,"-T                       topic          mqtt topic\n");
+	fprintf(stderr,"-H                       host           mqtt topic\n");
+	fprintf(stderr,"-P                       port           mqtt port\n");
+	fprintf(stderr,"-s                       mSeconds       sampling interval 1-1000\n");
+	fprintf(stderr,"-v                                      verbose debugging mode\n");
+	fprintf(stderr,"-h                                      this message\n");
 	fprintf(stderr,"--help                                  this message\n");
 }
 static uint64_t microtime(void) {
@@ -180,30 +206,131 @@ static void bmp280_sample(int i2cHandle, int i2cAddress) {
 //struct json_object *jobj_sensors_LSM9DS1,*jobj_sensors_LSM9DS1_gyro,*jobj_sensors_LSM9DS1_accel,*jobj_sensors_LSM9DS1_magnet;
 
 void LSM9DS1_init(int i2cHandle, int i2cAddress) {
+#if 0
 	/* one time sensor initialization */
 	int opResult;
 
 	/* address of device we will be working with */
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
+#else
+void detectIMU(void);
+void enableIMU(void);
+
+	detectIMU();
+	enableIMU();
+
+#endif
 
 }
 
 void LSM9DS1_sample(int i2cHandle, int i2cAddress) {
+#if 0
 	/* sample sensor */
 	int opResult;
 
 	/* address of device we will be working with */
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
+#endif
+	char buffer[64];
+        float accXnorm,accYnorm,pitch,roll,magXcomp,magYcomp;
+
+
+
+	float rate_gyr_y = 0.0;   // [deg/s]
+	float rate_gyr_x = 0.0;   // [deg/s]
+	float rate_gyr_z = 0.0;   // [deg/s]
+
+	int  accRaw[3];
+	int  magRaw[3];
+	int  gyrRaw[3];
+
+
+
+	float gyroXangle = 0.0;
+	float gyroYangle = 0.0;
+	float gyroZangle = 0.0;
+	float AccYangle = 0.0;
+	float AccXangle = 0.0;
+	float CFangleX = 0.0;
+	float CFangleY = 0.0;
+
+
+	//read MAG ACC and GYR data
+	readACC(accRaw);
+	readGYR(gyrRaw);
+	readMAG(magRaw);
+
+
+	//Convert Gyro raw to degrees per second
+	rate_gyr_x = (float) gyrRaw[0] * G_GAIN;
+	rate_gyr_y = (float) gyrRaw[1]  * G_GAIN;
+	rate_gyr_z = (float) gyrRaw[2]  * G_GAIN;
+
+
+
+	//Calculate the angles from the gyro
+	gyroXangle+=rate_gyr_x*DT;
+	gyroYangle+=rate_gyr_y*DT;
+	gyroZangle+=rate_gyr_z*DT;
+
+
+
+
+	//Convert Accelerometer values to degrees
+	AccXangle = (float) (atan2(accRaw[1],accRaw[2])+M_PI)*RAD_TO_DEG;
+	AccYangle = (float) (atan2(accRaw[2],accRaw[0])+M_PI)*RAD_TO_DEG;
+
+	//Change the rotation value of the accelerometer to -/+ 180 and move the Y axis '0' point to up.
+	//Two different pieces of code are used depending on how your IMU is mounted.
+	//If IMU is upside down
+	/*
+		if (AccXangle >180)
+				AccXangle -= (float)360.0;
+
+		AccYangle-=90;
+		if (AccYangle >180)
+				AccYangle -= (float)360.0;
+	*/
+
+	//If IMU is up the correct way, use these lines
+	AccXangle -= (float)180.0;
+	if (AccYangle > 90)
+			AccYangle -= (float)270;
+	else
+		AccYangle += (float)90;
+
+
+	//Complementary filter used to combine the accelerometer and gyro values.
+	CFangleX=AA*(CFangleX+rate_gyr_x*DT) +(1 - AA) * AccXangle;
+	CFangleY=AA*(CFangleY+rate_gyr_y*DT) +(1 - AA) * AccYangle;
+
+
+	//printf ("   GyroX  %7.3f \t AccXangle \e[m %7.3f \t \033[22;31mCFangleX %7.3f\033[0m\t GyroY  %7.3f \t AccYangle %7.3f \t \033[22;36mCFangleY %7.3f\t\033[0m\n",gyroXangle,AccXangle,CFangleX,gyroYangle,AccYangle,CFangleY);
 
 	/* put data in JSON objects */
 	/* put gyroscope data in jobj_sensors_LSM9DS1_gyro */
-	json_object_object_add(jobj_sensors_LSM9DS1_gyro, "gyro_x", json_object_new_string("example gyro value"));
+	snprintf(buffer,sizeof(buffer),"%1.3f",gyroXangle);
+	json_object_object_add(jobj_sensors_LSM9DS1_gyro, "gyro_x", json_object_new_string(buffer));
+	snprintf(buffer,sizeof(buffer),"%1.3f",gyroYangle);
+	json_object_object_add(jobj_sensors_LSM9DS1_gyro, "gyro_y", json_object_new_string(buffer));
 
 	/* put accelerometer data in jobj_sensors_LSM9DS1_accel */
-	json_object_object_add(jobj_sensors_LSM9DS1_accel, "accel_x", json_object_new_string("example accel value"));
+	snprintf(buffer,sizeof(buffer),"%1.3f",AccXangle);
+	json_object_object_add(jobj_sensors_LSM9DS1_accel, "accel_x", json_object_new_string(buffer));
+	snprintf(buffer,sizeof(buffer),"%1.3f",AccYangle);
+	json_object_object_add(jobj_sensors_LSM9DS1_accel, "accel_y", json_object_new_string(buffer));
+
+	//Compute heading
+	float heading = 180 * atan2(magRaw[1],magRaw[0])/M_PI;
+
+	//Convert heading to 0 - 360
+	if(heading < 0)
+		heading += 360;
+
 
 	/* put magnetometer data in jobj_sensors_LSM9DS1_magnet */
-	json_object_object_add(jobj_sensors_LSM9DS1_magnet, "magnet_x", json_object_new_string("example magnemometer value"));
+	snprintf(buffer,sizeof(buffer),"%1.3f",heading);
+	json_object_object_add(jobj_sensors_LSM9DS1_magnet, "magnet_heading", json_object_new_string(buffer));
 
 
 	/* put gyro, accel, and magnet into main LSM9DS1 */
@@ -212,6 +339,116 @@ void LSM9DS1_sample(int i2cHandle, int i2cAddress) {
 	json_object_object_add(jobj_sensors_LSM9DS1, "magnetometer", jobj_sensors_LSM9DS1_magnet);
 }
 
+/*   waits until the milliseond time changes fro before when to after when */
+void wait_for_it(int interval ) {
+	struct timeval start_time;
+	struct tm *now;
+	char timestamp[32];
+	static int next;
+	int when;
+
+	when = next += interval;
+	when %= 1000;
+
+	when *= 1000 ;	// convert to micro seconds
+	when += 250;
+	// printf("when = %d\n",when);	fflush(stdout);
+
+
+	for ( ;; ) {
+		while ( 0 != gettimeofday( &start_time, (struct timezone *) 0))
+			;
+		if ( when > start_time.tv_usec )
+			break;
+	}
+	for ( ;; ) {
+		while ( 0 != gettimeofday( &start_time, (struct timezone *) 0))
+			;
+		if ( when <= start_time.tv_usec )
+			break;
+	}
+	/* okay we transition from before to after */
+}
+void connect_callback(struct mosquitto *mosq, void *obj, int result) {
+	printf("# connect_callback, rc=%d\n", result);
+}
+static struct mosquitto *_mosquitto_startup(void) {
+	char clientid[24];
+	int rc = 0;
+
+
+	fprintf(stderr,"# mqtt-send-example start-up\n");
+
+
+	fprintf(stderr,"# initializing mosquitto MQTT library\n");
+	mosquitto_lib_init();
+
+	memset(clientid, 0, 24);
+	snprintf(clientid, 23, "mqtt-send-example_%d", getpid());
+	mosq = mosquitto_new(clientid, true, 0);
+
+	if (mosq) {
+		mosquitto_connect_callback_set(mosq, connect_callback);
+//		mosquitto_message_callback_set(mosq, message_callback);
+
+		fprintf(stderr,"# connecting to MQTT server %s:%d\n",mqtt_host,mqtt_port);
+		rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
+		// if ( 0 != rc )	what do I do?
+
+		/* start mosquitto network handling loop */
+		mosquitto_loop_start(mosq);
+		}
+
+return	mosq;
+}
+static void _mosquitto_shutdown(void) {
+
+if ( mosq ) {
+	
+	/* disconnect mosquitto so we can be done */
+	mosquitto_disconnect(mosq);
+	/* stop mosquitto network handling loop */
+	mosquitto_loop_stop(mosq,0);
+
+
+	mosquitto_destroy(mosq);
+	}
+
+fprintf(stderr,"# mosquitto_lib_cleanup()\n");
+mosquitto_lib_cleanup();
+}
+int BMP280_pub(const char *message ) {
+	int rc = 0;
+
+	static int messageID;
+	/* instance, message ID pointer, topic, data length, data, qos, retain */
+	rc = mosquitto_publish(mosq, &messageID, mqtt_topic, strlen(message), message, 0, 0); 
+
+	if (0 != outputDebug) fprintf(stderr,"# mosquitto_publish provided messageID=%d and return code=%d\n",messageID,rc);
+
+	/* check return status of mosquitto_publish */ 
+	/* this really just checks if mosquitto library accepted the message. Not that it was actually send on the network */
+	if ( MOSQ_ERR_SUCCESS == rc ) {
+		/* successful send */
+	} else if ( MOSQ_ERR_INVAL == rc ) {
+		fprintf(stderr,"# mosquitto error invalid parameters\n");
+	} else if ( MOSQ_ERR_NOMEM == rc ) {
+		fprintf(stderr,"# mosquitto error out of memory\n");
+	} else if ( MOSQ_ERR_NO_CONN == rc ) {
+		fprintf(stderr,"# mosquitto error no connection\n");
+	} else if ( MOSQ_ERR_PROTOCOL == rc ) {
+		fprintf(stderr,"# mosquitto error protocol\n");
+	} else if ( MOSQ_ERR_PAYLOAD_SIZE == rc ) {
+		fprintf(stderr,"# mosquitto error payload too large\n");
+	} else if ( MOSQ_ERR_MALFORMED_UTF8 == rc ) {
+		fprintf(stderr,"# mosquitto error topic is not valid UTF-8\n");
+	} else {
+		fprintf(stderr,"# mosquitto unknown error = %d\n",rc);
+	}
+
+
+return	rc;
+}
 
 int main(int argc, char **argv) {
 	/* optarg */
@@ -256,12 +493,21 @@ int main(int argc, char **argv) {
 		        {0,                                  0,                 0,  0 }
 		};
 
-		c = getopt_long(argc, argv, "s:", long_options, &option_index);
+		c = getopt_long(argc, argv, "s:T:H:P:vh", long_options, &option_index);
 
 		if (c == -1)
 			break;
 
 		switch (c) {
+			case 'T':	
+				strncpy(mqtt_topic,optarg,sizeof(mqtt_topic));
+				break;
+			case 'H':	
+				strncpy(mqtt_host,optarg,sizeof(mqtt_host));
+				break;
+			case 'P':
+				mqtt_port = atoi(optarg);
+				break;
 			case 's':
 				samplingInterval = atoi(optarg);
 				break;
@@ -284,6 +530,10 @@ int main(int argc, char **argv) {
 				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
 				i2cDevice[sizeof(i2cDevice)-1]='\0';
 				break;
+			case 'v':
+				outputDebug=1;
+				fprintf(stderr,"# verbose (debugging) output to stderr enabled\n");
+				break;
 			/* JSON settings */
 			case 'j':
 				strncpy(jsonEnclosingArray,optarg,sizeof(jsonEnclosingArray)-1);
@@ -291,6 +541,12 @@ int main(int argc, char **argv) {
 				break;
 		}
 	}
+	if ( ' ' >= mqtt_host[0] ) { fputs("# <-H mqtt_host>	\n",stderr); exit(1); } else fprintf(stderr,"# mqtt_host=%s\n",mqtt_host);
+	if ( ' ' >= mqtt_topic[0] ) { fputs("# <-T mqtt_topic>	\n",stderr); exit(1); } else fprintf(stderr,"# mqtt_topic=%s\n",mqtt_topic);
+
+	if ( 0 == _mosquitto_startup() )
+		return	1;
+
 
 	/* start-up verbosity */
 	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
@@ -329,7 +585,8 @@ int main(int argc, char **argv) {
 
 	/* ready to periodically sample */
 	fprintf(stderr,"# starting sample loop\n");
-	while ( 1 ) {
+	int	rc = 0;
+	while ( 0 == rc ) {
 		/* setup JSON objects */
 		jobj_enclosing = json_object_new_object();
 		jobj = json_object_new_object();
@@ -339,6 +596,9 @@ int main(int argc, char **argv) {
 		jobj_sensors_LSM9DS1_gyro = json_object_new_object();
 		jobj_sensors_LSM9DS1_accel = json_object_new_object();
 		jobj_sensors_LSM9DS1_magnet = json_object_new_object();
+
+		wait_for_it(samplingInterval);
+
 
 		/* timestamp of start of samples */
 		gettimeofday(&time, NULL); 
@@ -378,17 +638,16 @@ int main(int argc, char **argv) {
 		json_object_object_add(jobj_enclosing, jsonEnclosingArray, jobj);
 
 
-		printf("%s\n", json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY));
+		char	*s = json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY);
+		printf("%s\n", s);
 
+		rc =  BMP280_pub(s);
 		/* release JSON object */
 		json_object_put(jobj_sensors_bmp280);
 		json_object_put(jobj_sensors);
 		json_object_put(jobj);
 		json_object_put(jobj_enclosing);
 
-		/* TODO: more periodic sampling */
-		/* TODO: possible solution discussed at https://qnaplus.com/implement-periodic-timer-linux/ */
-		usleep(1000*samplingInterval);
 	}
 
 	/* close I2C */
@@ -397,6 +656,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 	
+	_mosquitto_shutdown();
 	fprintf(stderr,"# Done...\n");
-
+	return	0;
 }
