@@ -23,6 +23,7 @@ https://github.com/LanderU/BMP280/blob/master/BMP280.c
 static char jsonEnclosingArray[256];
 struct json_object *jobj_enclosing,*jobj,*jobj_sensors;
 struct json_object *jobj_sensors_bmp280;
+struct json_object *jobj_sensors_LSM9DS1,*jobj_sensors_LSM9DS1_gyro,*jobj_sensors_LSM9DS1_accel,*jobj_sensors_LSM9DS1_magnet;
 
 /* BMP280 calibration values that are read once on initialization */
 typedef struct { 
@@ -170,6 +171,34 @@ static void bmp280_sample(int i2cHandle) {
 
 }
 
+//struct json_object *jobj_sensors_LSM9DS1,*jobj_sensors_LSM9DS1_gyro,*jobj_sensors_LSM9DS1_accel,*jobj_sensors_LSM9DS1_magnet;
+
+void LSM9DS1_init(int i2cHandle) {
+	/* one time sensor initialization */
+
+}
+
+void LSM9DS1_sample(int i2cHandle) {
+	/* sample sensor */
+
+	/* put data in JSON objects */
+	/* put gyroscope data in jobj_sensors_LSM9DS1_gyro */
+	json_object_object_add(jobj_sensors_LSM9DS1_gyro, "gyro_x", json_object_new_string("example gyro value"));
+
+	/* put accelerometer data in jobj_sensors_LSM9DS1_accel */
+	json_object_object_add(jobj_sensors_LSM9DS1_accel, "accel_x", json_object_new_string("example accel value"));
+
+	/* put magnetometer data in jobj_sensors_LSM9DS1_magnet */
+	json_object_object_add(jobj_sensors_LSM9DS1_magnet, "magnet_x", json_object_new_string("example magnemometer value"));
+
+
+	/* put gyro, accel, and magnet into main LSM9DS1 */
+	json_object_object_add(jobj_sensors_LSM9DS1, "gyrometer", jobj_sensors_LSM9DS1_gyro);
+	json_object_object_add(jobj_sensors_LSM9DS1, "accelerometer", jobj_sensors_LSM9DS1_accel);
+	json_object_object_add(jobj_sensors_LSM9DS1, "magnetometer", jobj_sensors_LSM9DS1_magnet);
+}
+
+
 int main(int argc, char **argv) {
 	/* optarg */
 	int c;
@@ -269,6 +298,10 @@ int main(int argc, char **argv) {
 	bmp280_init(i2cHandle);
 	fprintf(stderr,"done\n");
 
+	fprintf(stderr,"# initializing and configuring LSM9DS1 ...");
+	LSM9DS1_init(i2cHandle);
+	fprintf(stderr,"done\n");
+
 
 	/* allow hardware to finish initializing. May not be nescessary. */
 	fprintf(stderr,"# waiting to start\n");
@@ -283,6 +316,10 @@ int main(int argc, char **argv) {
 		jobj = json_object_new_object();
 		jobj_sensors = json_object_new_object();
 		jobj_sensors_bmp280 = json_object_new_object();
+		jobj_sensors_LSM9DS1 = json_object_new_object();
+		jobj_sensors_LSM9DS1_gyro = json_object_new_object();
+		jobj_sensors_LSM9DS1_accel = json_object_new_object();
+		jobj_sensors_LSM9DS1_magnet = json_object_new_object();
 
 		/* timestamp of start of samples */
 		gettimeofday(&time, NULL); 
@@ -291,6 +328,7 @@ int main(int argc, char **argv) {
 
 		/* sample sensors */
 		bmp280_sample(i2cHandle);
+		LSM9DS1_sample(i2cHandle);
 
 
 		/* pack data into JSON objects */
@@ -304,6 +342,7 @@ int main(int argc, char **argv) {
 
 		/* add individual sensors to sensor object */
 		json_object_object_add(jobj_sensors, "bmp280", jobj_sensors_bmp280);
+		json_object_object_add(jobj_sensors, "LSM9DS1", jobj_sensors_LSM9DS1);
 
 		/* add sensors to main JSON object */
 		json_object_object_add(jobj, "sensors", jobj_sensors);
@@ -312,11 +351,7 @@ int main(int argc, char **argv) {
 		json_object_object_add(jobj_enclosing, jsonEnclosingArray, jobj);
 
 
-//		if ( strlen(jsonEnclosingArray) > 0 ) {
-			printf("%s\n", json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY));
-//		} else {
-//			printf("%s\n", json_object_to_json_string_ext(jobj_sensors_bmp280, JSON_C_TO_STRING_PRETTY));
-//		}
+		printf("%s\n", json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY));
 
 		/* release JSON object */
 		json_object_put(jobj_sensors_bmp280);
