@@ -62,10 +62,13 @@ int bmp280_make_int(uint8_t msb, uint8_t lsb, int sign_extend) {
 	return i;
 }
 
-void bmp280_init(int i2cHandle) {
+void bmp280_init(int i2cHandle, int i2cAddress) {
 	int opResult;
 	uint8_t reg[1];
 	uint8_t data[24];
+
+	/* address of device we will be working with */
+	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
 	// Read 24 bytes of data from address(0x88)
 	reg[0] = 0x88;
@@ -124,10 +127,13 @@ void bmp280_init(int i2cHandle) {
 
 
 /* read bmp280 device that has been previously configured */
-static void bmp280_sample(int i2cHandle) {
+static void bmp280_sample(int i2cHandle, int i2cAddress) {
 	int opResult;
 	uint8_t reg[1];
 	uint8_t data[8];
+
+	/* address of device we will be working with */
+	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
 
 	// Read 8 bytes of data from register(0xF7)
@@ -173,13 +179,21 @@ static void bmp280_sample(int i2cHandle) {
 
 //struct json_object *jobj_sensors_LSM9DS1,*jobj_sensors_LSM9DS1_gyro,*jobj_sensors_LSM9DS1_accel,*jobj_sensors_LSM9DS1_magnet;
 
-void LSM9DS1_init(int i2cHandle) {
+void LSM9DS1_init(int i2cHandle, int i2cAddress) {
 	/* one time sensor initialization */
+	int opResult;
+
+	/* address of device we will be working with */
+	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
 }
 
-void LSM9DS1_sample(int i2cHandle) {
+void LSM9DS1_sample(int i2cHandle, int i2cAddress) {
 	/* sample sensor */
+	int opResult;
+
+	/* address of device we will be working with */
+	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
 	/* put data in JSON objects */
 	/* put gyroscope data in jobj_sensors_LSM9DS1_gyro */
@@ -206,7 +220,8 @@ int main(int argc, char **argv) {
 
 	/* I2C stuff */
 	char i2cDevice[64];	/* I2C device name */
-	int i2cAddress; 	/* chip address */
+	int LSM9DS1_i2cAddress; 
+	int BMP280_i2cAddress; 
 	int i2cHandle;
 	int opResult = 0;	/* for error checking of operations */
 	int samplingInterval = 500;	// milliseconds;
@@ -222,7 +237,8 @@ int main(int argc, char **argv) {
 	fprintf(stderr,"# BMP280 read utility\n");
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
-	i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
+	BMP280_i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
+	LSM9DS1_i2cAddress=0x12;	/* default address of LSM9DS1 device is TODO I DONT KNOW. */ 	
 
 	strcpy(jsonEnclosingArray,"BerryIMU"); 
 
@@ -233,7 +249,8 @@ int main(int argc, char **argv) {
 			/* normal program */
 		        {"json-enclosing-array",             required_argument, 0, 'j' },
 		        {"i2c-device",                       required_argument, 0, 'i' },
-		        {"i2c-address",                      required_argument, 0, 'a' },
+		        {"LSM9DS1-i2c-address",              required_argument, 0, 'l' },
+		        {"BMP280-i2c-address",               required_argument, 0, 'b' },
 		        {"help",                             no_argument,       0, 'h' },
 		        {"samplingInterval",                 required_argument, 0, 's' },
 		        {0,                                  0,                 0,  0 }
@@ -257,8 +274,11 @@ int main(int argc, char **argv) {
 				exit(0);	
 				break;
 			/* I2C settings */
-			case 'a':
-				sscanf(optarg,"%x",&i2cAddress);
+			case 'l':
+				sscanf(optarg,"%x",&LSM9DS1_i2cAddress);
+				break;
+			case 'b':
+				sscanf(optarg,"%x",&BMP280_i2cAddress);
 				break;
 			case 'i':
 				strncpy(i2cDevice,optarg,sizeof(i2cDevice)-1);
@@ -274,7 +294,8 @@ int main(int argc, char **argv) {
 
 	/* start-up verbosity */
 	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
-	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
+	fprintf(stderr,"# using BMP280 I2C device address of 0x%02X\n",BMP280_i2cAddress);
+	fprintf(stderr,"# using LSM9DS1 I2C device address of 0x%02X\n",LSM9DS1_i2cAddress);
 
 
 	/* Open I2C bus */
@@ -286,8 +307,6 @@ int main(int argc, char **argv) {
 	}
 	/* not using 10 bit addresses */
 	opResult = ioctl(i2cHandle, I2C_TENBIT, 0);
-	/* address of device we will be working with */
-	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
 
 
 
@@ -295,11 +314,11 @@ int main(int argc, char **argv) {
 
 	/* I2C running, now initialize / configure hardware */
 	fprintf(stderr,"# initializing and configuring BMP280 ...");
-	bmp280_init(i2cHandle);
+	bmp280_init(i2cHandle,BMP280_i2cAddress);
 	fprintf(stderr,"done\n");
 
 	fprintf(stderr,"# initializing and configuring LSM9DS1 ...");
-	LSM9DS1_init(i2cHandle);
+	LSM9DS1_init(i2cHandle,LSM9DS1_i2cAddress);
 	fprintf(stderr,"done\n");
 
 
@@ -327,8 +346,8 @@ int main(int argc, char **argv) {
 
 
 		/* sample sensors */
-		bmp280_sample(i2cHandle);
-		LSM9DS1_sample(i2cHandle);
+		bmp280_sample(i2cHandle,BMP280_i2cAddress);
+		LSM9DS1_sample(i2cHandle,LSM9DS1_i2cAddress);
 
 
 		/* pack data into JSON objects */
@@ -336,7 +355,15 @@ int main(int argc, char **argv) {
         	        fprintf(stderr,"# error calling localtime() %s",strerror(errno));
 	                exit(1);
 	        }
-	        snprintf(timestamp,sizeof(timestamp),"%04d-%02d-%02d %02d:%02d:%02d.%03ld", 1900 + now->tm_year,1 + now->tm_mon, now->tm_mday,now->tm_hour,now->tm_min,now->tm_sec,time.tv_usec/1000);
+	        snprintf(timestamp,sizeof(timestamp),"%04d-%02d-%02d %02d:%02d:%02d.%03ld", 
+			1900 + now->tm_year,
+			1 + now->tm_mon, 
+			now->tm_mday,
+			now->tm_hour,
+			now->tm_min,
+			now->tm_sec,
+			time.tv_usec/1000
+		);
 		json_object_object_add(jobj,"date",json_object_new_string(timestamp));
 
 
