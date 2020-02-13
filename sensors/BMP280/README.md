@@ -30,19 +30,3 @@ switch|Required/Optional|argument|description
 --json-enclosing-array|OPTIONAL|array name. wrap data array
 
 
-void printUsage(void) {
-        fprintf(stderr,"Usage:\n\n");
-        fprintf(stderr,"switch           argument       description\n");
-        fprintf(stderr,"========================================================================================================\n");
-        fprintf(stderr,"--i2c-device             device         /dev/ entry for I2C-dev device\n");
-        fprintf(stderr,"--i2c-address            chip address   hex address of chip\n");
-        fprintf(stderr,"--json-enclosing-array   array name     wrap data array\n");
-        fprintf(stderr,"-T                       topic          mqtt topic\n");
-        fprintf(stderr,"-H                       host           mqtt topic\n");
-        fprintf(stderr,"-P                       port           mqtt port\n");
-        fprintf(stderr,"-s                       mSeconds       sampling interval 1-1000\n");
-        fprintf(stderr,"-v                                      verbose debugging mode\n");
-        fprintf(stderr,"-h                                      this message\n");
-        fprintf(stderr,"--help                                  this message\n");
-}
-
