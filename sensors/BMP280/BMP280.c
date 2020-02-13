@@ -17,10 +17,21 @@ https://github.com/LanderU/BMP280/blob/master/BMP280.c
 #include <errno.h>
 #include <getopt.h>
 #include <sys/time.h>
-#include <sys/time.h>
 #include <time.h>
 
+/* JSON stuff */
 static char jsonEnclosingArray[256];
+struct json_object *jobj_enclosing,*jobj,*jobj_sensors;
+struct json_object *jobj_sensors_bmp280;
+
+/* BMP280 calibration values that are read once on initialization */
+typedef struct { 
+	int dig_T1, dig_T2, dig_T3;
+	int dig_P1, dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+} bmp280_struct_bmp280;
+
+bmp280_struct_bmp280 bmp280;
+
 
 void printUsage(void) {
 	fprintf(stderr,"Usage:\n\n");
@@ -51,25 +62,12 @@ int bmp280_make_int(uint8_t msb, uint8_t lsb, int sign_extend) {
 }
 
 void bmp280_init(int i2cHandle) {
-
-}
-
-
-/* read bmp280 device that has been previously configured */
-static void bmp280_sample(int i2cHandle) {
-	struct timeval time;
-	char buffer[32];
-	char buff1[32];
-	char timestamp[32];
-	struct tm *now;
 	int opResult;
-
-	gettimeofday(&time, NULL); 
-	/* JSON stuff */
-	struct json_object *jobj,*jobj_data;
+	uint8_t reg[1];
+	uint8_t data[24];
 
 	// Read 24 bytes of data from address(0x88)
-	uint8_t reg[1] = {0x88};
+	reg[0] = 0x88;
 	opResult = write(i2cHandle, reg, 1);
 	if (opResult != 1) {
 		fprintf(stderr,"# I2C write error in address set. No ACK! Exiting...\n");
@@ -77,30 +75,26 @@ static void bmp280_sample(int i2cHandle) {
 	}
 
 
-	uint8_t data[24] = {0};
 	if ( read(i2cHandle, data, 24) != 24 ) {
 		fprintf(stderr,"# I2C read error. Exiting...\n");
 		exit(1);
 	}
 
-	/* convert data to real units */
 	/* temperature */
-	int dig_T1, dig_T2, dig_T3;
-	dig_T1 = bmp280_make_int(data[1],data[0],0); /* unsigned */
-	dig_T2 = bmp280_make_int(data[3],data[2],1); /* signed */
-	dig_T3 = bmp280_make_int(data[5],data[4],1); 
+	bmp280.dig_T1 = bmp280_make_int(data[1],data[0],0); /* unsigned */
+	bmp280.dig_T2 = bmp280_make_int(data[3],data[2],1); /* signed */
+	bmp280.dig_T3 = bmp280_make_int(data[5],data[4],1); 
 	
 	/* pressure */
-	int dig_P1, dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
-	dig_P1 = bmp280_make_int(data[7],data[6],0); 
-	dig_P2 = bmp280_make_int(data[9],data[8],1); 
-	dig_P3 = bmp280_make_int(data[11],data[10],1); 
-	dig_P4 = bmp280_make_int(data[13],data[12],1); 
-	dig_P5 = bmp280_make_int(data[15],data[14],1); 
-	dig_P6 = bmp280_make_int(data[17],data[16],1); 
-	dig_P7 = bmp280_make_int(data[19],data[18],1); 
-	dig_P8 = bmp280_make_int(data[21],data[20],1); 
-	dig_P9 = bmp280_make_int(data[23],data[22],1); 
+	bmp280.dig_P1 = bmp280_make_int(data[7],data[6],0); 
+	bmp280.dig_P2 = bmp280_make_int(data[9],data[8],1); 
+	bmp280.dig_P3 = bmp280_make_int(data[11],data[10],1); 
+	bmp280.dig_P4 = bmp280_make_int(data[13],data[12],1); 
+	bmp280.dig_P5 = bmp280_make_int(data[15],data[14],1); 
+	bmp280.dig_P6 = bmp280_make_int(data[17],data[16],1); 
+	bmp280.dig_P7 = bmp280_make_int(data[19],data[18],1); 
+	bmp280.dig_P8 = bmp280_make_int(data[21],data[20],1); 
+	bmp280.dig_P9 = bmp280_make_int(data[23],data[22],1); 
 
 		
 	// Select control measurement register(0xF4)
@@ -123,8 +117,18 @@ static void bmp280_sample(int i2cHandle) {
 		fprintf(stderr,"# I2C write error in setting standby time. No ACK! Exiting...\n");
 		exit(2);
 	}
-	// sleep(1);
 	
+
+}
+
+
+/* read bmp280 device that has been previously configured */
+static void bmp280_sample(int i2cHandle) {
+	int opResult;
+	uint8_t reg[1];
+	uint8_t data[8];
+
+
 	// Read 8 bytes of data from register(0xF7)
 	// pressure msb1, pressure msb, pressure lsb, temp msb1, temp msb, temp lsb, humidity lsb, humidity msb
 	reg[0] = 0xF7;
@@ -143,55 +147,27 @@ static void bmp280_sample(int i2cHandle) {
 	long adc_t = (((long)data[3] * 65536) + ((long)data[4] * 256) + (long)(data[5] & 0xF0)) / 16;
 		
 	// Temperature offset calculations
-	double var1 = (((double)adc_t) / 16384.0 - ((double)dig_T1) / 1024.0) * ((double)dig_T2);
-	double var2 = ((((double)adc_t) / 131072.0 - ((double)dig_T1) / 8192.0) *(((double)adc_t)/131072.0 - ((double)dig_T1)/8192.0)) * ((double)dig_T3);
+	double var1 = (((double)adc_t) / 16384.0 - ((double)bmp280.dig_T1) / 1024.0) * ((double)bmp280.dig_T2);
+	double var2 = ((((double)adc_t) / 131072.0 - ((double)bmp280.dig_T1) / 8192.0) *(((double)adc_t)/131072.0 - ((double)bmp280.dig_T1)/8192.0)) * ((double)bmp280.dig_T3);
 	double t_fine = (long)(var1 + var2);
 	double temperatureC = (var1 + var2) / 5120.0;
 		
 	// Pressure offset calculations
 	var1 = ((double)t_fine / 2.0) - 64000.0;
-	var2 = var1 * var1 * ((double)dig_P6) / 32768.0;
-	var2 = var2 + var1 * ((double)dig_P5) * 2.0;
-	var2 = (var2 / 4.0) + (((double)dig_P4) * 65536.0);
-	var1 = (((double) dig_P3) * var1 * var1 / 524288.0 + ((double) dig_P2) * var1) / 524288.0;
-	var1 = (1.0 + var1 / 32768.0) * ((double)dig_P1);
+	var2 = var1 * var1 * ((double)bmp280.dig_P6) / 32768.0;
+	var2 = var2 + var1 * ((double)bmp280.dig_P5) * 2.0;
+	var2 = (var2 / 4.0) + (((double)bmp280.dig_P4) * 65536.0);
+	var1 = (((double) bmp280.dig_P3) * var1 * var1 / 524288.0 + ((double) bmp280.dig_P2) * var1) / 524288.0;
+	var1 = (1.0 + var1 / 32768.0) * ((double)bmp280.dig_P1);
 	double p = 1048576.0 - (double)adc_p;
 	p = (p - (var2 / 4096.0)) * 6250.0 / var1;
-	var1 = ((double) dig_P9) * p * p / 2147483648.0;
-	var2 = p * ((double) dig_P8) / 32768.0;
-	double pressureHPA = (p + (var1 + var2 + ((double)dig_P7)) / 16.0) / 100;
+	var1 = ((double) bmp280.dig_P9) * p * p / 2147483648.0;
+	var2 = p * ((double) bmp280.dig_P8) / 32768.0;
+	double pressureHPA = (p + (var1 + var2 + ((double)bmp280.dig_P7)) / 16.0) / 100;
 	
-	/* setup JSON objects */
-	jobj = json_object_new_object();
-	jobj_data = json_object_new_object();
+	json_object_object_add(jobj_sensors_bmp280, "pressure_HPA", json_object_new_double(pressureHPA));
+	json_object_object_add(jobj_sensors_bmp280, "temperature_C", json_object_new_double(temperatureC));
 
-	/* put data in JSON */
-	now = localtime(&time.tv_sec);
-        if ( 0 == now ) {
-                fprintf(stderr,"# error calling localtime() %s",strerror(errno));
-                exit(1);
-        }
-        snprintf(timestamp,sizeof(timestamp),"%04d-%02d-%02d %02d:%02d:%02d.%03ld",
-                1900 + now->tm_year,1 + now->tm_mon, now->tm_mday,now->tm_hour,now->tm_min,now->tm_sec,time.tv_usec/1000);
-
-
-
-	json_object_object_add(jobj_data,"date",json_object_new_string(timestamp));
-	json_object_object_add(jobj_data, "pressure_HPA", json_object_new_double(pressureHPA));
-	json_object_object_add(jobj_data, "temperature_C", json_object_new_double(temperatureC));
-
-	json_object_object_add(jobj, jsonEnclosingArray, jobj_data);
-
-
-	if ( strlen(jsonEnclosingArray) > 0 ) {
-		printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
-	} else {
-		printf("%s\n", json_object_to_json_string_ext(jobj_data, JSON_C_TO_STRING_PRETTY));
-	}
-
-	/* release JSON object */
-	json_object_put(jobj_data);
-	json_object_put(jobj);
 }
 
 int main(int argc, char **argv) {
@@ -206,6 +182,12 @@ int main(int argc, char **argv) {
 	int opResult = 0;	/* for error checking of operations */
 	int samplingInterval = 500;	// milliseconds;
 
+	/* sample loop */
+	struct timeval time;
+	struct tm *now;
+	char timestamp[32];
+
+
 
 
 	fprintf(stderr,"# BMP280 read utility\n");
@@ -213,7 +195,7 @@ int main(int argc, char **argv) {
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
 
-	strcpy(jsonEnclosingArray,"BMP280"); 
+	strcpy(jsonEnclosingArray,"BerryIMU"); 
 
 	while (1) {
 		int this_option_optind = optind ? optind : 1;
@@ -283,11 +265,65 @@ int main(int argc, char **argv) {
 	fprintf(stderr,"# samplingInterval = %d mSeconds\n",samplingInterval);
 
 	/* I2C running, now initialize / configure hardware */
+	fprintf(stderr,"# initializing and configuring BMP280 ...");
 	bmp280_init(i2cHandle);
+	fprintf(stderr,"done\n");
 
 
+	/* allow hardware to finish initializing. May not be nescessary. */
+	fprintf(stderr,"# waiting to start\n");
+	sleep(1);
+
+
+	/* ready to periodically sample */
+	fprintf(stderr,"# starting sample loop\n");
 	while ( 1 ) {
+		/* setup JSON objects */
+		jobj_enclosing = json_object_new_object();
+		jobj = json_object_new_object();
+		jobj_sensors = json_object_new_object();
+		jobj_sensors_bmp280 = json_object_new_object();
+
+		/* timestamp of start of samples */
+		gettimeofday(&time, NULL); 
+		now = localtime(&time.tv_sec);
+
+
+		/* sample sensors */
 		bmp280_sample(i2cHandle);
+
+
+		/* pack data into JSON objects */
+	        if ( 0 == now ) {
+        	        fprintf(stderr,"# error calling localtime() %s",strerror(errno));
+	                exit(1);
+	        }
+	        snprintf(timestamp,sizeof(timestamp),"%04d-%02d-%02d %02d:%02d:%02d.%03ld", 1900 + now->tm_year,1 + now->tm_mon, now->tm_mday,now->tm_hour,now->tm_min,now->tm_sec,time.tv_usec/1000);
+		json_object_object_add(jobj,"date",json_object_new_string(timestamp));
+
+
+		/* add individual sensors to sensor object */
+		json_object_object_add(jobj_sensors, "bmp280", jobj_sensors_bmp280);
+
+		/* add sensors to main JSON object */
+		json_object_object_add(jobj, "sensors", jobj_sensors);
+
+		/* enclose array */
+		json_object_object_add(jobj_enclosing, jsonEnclosingArray, jobj);
+
+
+//		if ( strlen(jsonEnclosingArray) > 0 ) {
+			printf("%s\n", json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY));
+//		} else {
+//			printf("%s\n", json_object_to_json_string_ext(jobj_sensors_bmp280, JSON_C_TO_STRING_PRETTY));
+//		}
+
+		/* release JSON object */
+		json_object_put(jobj_sensors_bmp280);
+		json_object_put(jobj_sensors);
+		json_object_put(jobj);
+		json_object_put(jobj_enclosing);
+
 		/* TODO: more periodic sampling */
 		/* TODO: possible solution discussed at https://qnaplus.com/implement-periodic-timer-linux/ */
 		usleep(1000*samplingInterval);
