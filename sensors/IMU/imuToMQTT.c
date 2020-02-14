@@ -16,11 +16,8 @@ send IMU data to MQTT
 #include <sys/time.h>
 #include <time.h>
 #include <mosquitto.h>
-
-extern void bmp280_init(int, int);
-extern void bmp280_sample(int, int);
-extern void LSM9DS1_init(int, int);
-extern void LSM9DS1_sample(int, int);
+#include "sensor_BMP280.h"
+#include "sensor_LSM9DS1.h"
 
 int outputDebug=0;
 
@@ -380,7 +377,7 @@ int main(int argc, char **argv) {
 
 
 		/* convert array to string */
-		char	*s = json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY);
+		char	*s = (char *) json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY);
 		printf("%s\n", s);
 
 		/* send to MQTT */

@@ -14,6 +14,7 @@ Bosch BMP280 pressure and temperature I2C sensor.
 #include <errno.h>
 #include <sys/time.h>
 #include <time.h>
+#include "sensor_BMP280.h"
 
 struct json_object *jobj_sensors_bmp280;
 

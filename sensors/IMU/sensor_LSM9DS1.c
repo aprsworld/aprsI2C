@@ -25,6 +25,7 @@
 #include "i2c-dev.h" /* TODO: this should be using linux/i2c.h and/or linux/i2c-dev.h ... BerryIMU file seems to be weird hybrid */
 #include "LSM9DS0.h"
 #include "LSM9DS1.h"
+#include "sensor_LSM9DS1.h"
 
 static int file;
 static int LSM9DS0 = 0;
