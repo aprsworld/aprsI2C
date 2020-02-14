@@ -1,6 +1,6 @@
-# BMP280
+# imuToMQTT
 
-Read the BerryIMU for gyro, accelerometer and magnometer.   Processes the atmospheric temperature and pressure.
+Read BMP280 and LSM9DS1 (packaged on BerryIMU V3) for gyro, accelerometer and magnometer, pressure, and temperature. Send results to stdout and optiocally MQTT
 
 ## Installation
 
