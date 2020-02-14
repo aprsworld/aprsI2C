@@ -108,6 +108,7 @@ void bmp280_sample(int i2cHandle, int i2cAddress) {
 	int opResult;
 	uint8_t reg[1];
 	uint8_t data[8];
+	char buffer[32];
 
 	/* address of device we will be working with */
 	opResult = ioctl(i2cHandle, I2C_SLAVE, i2cAddress);
@@ -151,5 +152,10 @@ void bmp280_sample(int i2cHandle, int i2cAddress) {
 	
 	json_object_object_add(jobj_sensors_bmp280, "pressure_HPA", json_object_new_double(pressureHPA));
 	json_object_object_add(jobj_sensors_bmp280, "temperature_C", json_object_new_double(temperatureC));
+
+	snprintf(buffer,sizeof(buffer),"%02x %02x %02x %02x %02x %02x %02x %02x",
+		data[0], data[1],  data[2], data[3], data[4], data[5], data[6], data[7]);
+
+	json_object_object_add(jobj_sensors_bmp280, "sample_0X", json_object_new_string(buffer));
 }
 

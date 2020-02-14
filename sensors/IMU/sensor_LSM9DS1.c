@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -27,6 +28,13 @@
 #include "LSM9DS1.h"
 #include "sensor_LSM9DS1.h"
 
+
+#if 0
+	snprintf(buffer,sizeof(buffer),"%02x %02x %02x %02x %02x %02x %02x %02x",
+		data[0], data[1],  data[2], data[3], data[4], data[5], data[6], data[7]);
+
+	json_object_object_add(jobj_sensors_bmp280, "sample_0X", json_object_new_string(buffer));
+#endif
 static int file;
 static int LSM9DS0 = 0;
 static int LSM9DS1 = 0;
@@ -258,6 +266,19 @@ void enableIMU(void)
 
 }
 
+static void _build_raw_format(char *d,int *raw, int count ) {
+	char buffer[16];
+	int *raw_end = raw + count;
+	d[0] = '\0';
+	for ( ; raw < raw_end ; raw++ ) {
+		snprintf(buffer,sizeof(buffer),"%08x",*raw);
+		strcat(d,buffer + 4);
+		strcat(d," ");
+	}
+}
+
+
+
 
 void LSM9DS1_init(int i2cHandle, int i2cAddress) {
 
@@ -289,6 +310,7 @@ void LSM9DS1_sample(int i2cHandle, int i2cAddress) {
 	float CFangleX = 0.0;
 	float CFangleY = 0.0;
 
+	char *raw_fmt="%04x %04x %04x";
 
 	//read MAG ACC and GYR data
 	readACC(accRaw);
@@ -369,6 +391,16 @@ void LSM9DS1_sample(int i2cHandle, int i2cAddress) {
 	snprintf(buffer,sizeof(buffer),"%1.3f",heading);
 	json_object_object_add(jobj_sensors_LSM9DS1_magnet, "magnet_heading", json_object_new_string(buffer));
 
+	/* put raw data from the three sensos */
+	// snprintf(buffer,sizeof(buffer),raw_fmt,(int16_t)accRaw[0],(int16_t)accRaw[1],(int16_t)accRaw[2]);
+	_build_raw_format(buffer,accRaw,3);
+	json_object_object_add( jobj_sensors_LSM9DS1_accel, "sample_0X", json_object_new_string(buffer));
+
+	_build_raw_format(buffer,gyrRaw,3);
+	json_object_object_add( jobj_sensors_LSM9DS1_gyro, "sample_0X", json_object_new_string(buffer));
+
+	_build_raw_format(buffer,magRaw,3);
+	json_object_object_add( jobj_sensors_LSM9DS1_magnet, "sample_0X", json_object_new_string(buffer));
 
 	/* put gyro, accel, and magnet into main LSM9DS1 */
 	json_object_object_add(jobj_sensors_LSM9DS1, "gyrometer", jobj_sensors_LSM9DS1_gyro);
