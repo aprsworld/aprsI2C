@@ -28,15 +28,11 @@ static struct mosquitto *mosq;
 
 static void _mosquitto_shutdown(void);
 
+static int disable_mqtt_output;
 
 /* JSON stuff */
 static char jsonEnclosingArray[256];
 struct json_object *jobj_enclosing,*jobj,*jobj_sensors;
-
-/* sensor JSON objects come in from sensor_whatever.c files */
-extern struct json_object *jobj_sensors_bmp280;
-extern struct json_object *jobj_sensors_LSM9DS1,*jobj_sensors_LSM9DS1_gyro,*jobj_sensors_LSM9DS1_accel,*jobj_sensors_LSM9DS1_magnet;
-
 
 void printUsage(void) {
 	fprintf(stderr,"Usage:\n\n");
@@ -45,6 +41,7 @@ void printUsage(void) {
 	fprintf(stderr,"--i2c-device             device         /dev/ entry for I2C-dev device\n");
 	fprintf(stderr,"--i2c-address            chip address   hex address of chip\n");
 	fprintf(stderr,"--json-enclosing-array   array name     wrap data array\n");
+	fprintf(stderr,"--stdout                                no mqtt output \n");
 	fprintf(stderr,"-T                       topic          mqtt topic\n");
 	fprintf(stderr,"-H                       host           mqtt topic\n");
 	fprintf(stderr,"-P                       port           mqtt port\n");
@@ -95,7 +92,7 @@ void connect_callback(struct mosquitto *mosq, void *obj, int result) {
 	printf("# connect_callback, rc=%d\n", result);
 }
 
-static struct mosquitto *_mosquitto_startup(void) {
+static struct mosquitto * _mosquitto_startup(void) {
 	char clientid[24];
 	int rc = 0;
 
@@ -106,7 +103,7 @@ static struct mosquitto *_mosquitto_startup(void) {
 	mosquitto_lib_init();
 
 	memset(clientid, 0, 24);
-	snprintf(clientid, 23, "mqtt-send-example_%d", getpid());
+	snprintf(clientid, 23, "imuToMQTT_%d", getpid());
 	mosq = mosquitto_new(clientid, true, 0);
 
 	if (mosq) {
@@ -140,32 +137,37 @@ static void _mosquitto_shutdown(void) {
 int m_pub(const char *message ) {
 	int rc = 0;
 
-	static int messageID;
-	/* instance, message ID pointer, topic, data length, data, qos, retain */
-	rc = mosquitto_publish(mosq, &messageID, mqtt_topic, strlen(message), message, 0, 0); 
+	if ( 0 == disable_mqtt_output ) {
+		static int messageID;
+		/* instance, message ID pointer, topic, data length, data, qos, retain */
+		rc = mosquitto_publish(mosq, &messageID, mqtt_topic, strlen(message), message, 0, 0); 
 
-	if (0 != outputDebug) { 
-		fprintf(stderr,"# mosquitto_publish provided messageID=%d and return code=%d\n",messageID,rc);
+		if (0 != outputDebug) { 
+			fprintf(stderr,"# mosquitto_publish provided messageID=%d and return code=%d\n",messageID,rc);
+		}
+
+		/* check return status of mosquitto_publish */ 
+		/* this really just checks if mosquitto library accepted the message. Not that it was actually send on the network */
+		if ( MOSQ_ERR_SUCCESS == rc ) {
+			/* successful send */
+		} else if ( MOSQ_ERR_INVAL == rc ) {
+			fprintf(stderr,"# mosquitto error invalid parameters\n");
+		} else if ( MOSQ_ERR_NOMEM == rc ) {
+			fprintf(stderr,"# mosquitto error out of memory\n");
+		} else if ( MOSQ_ERR_NO_CONN == rc ) {
+			fprintf(stderr,"# mosquitto error no connection\n");
+		} else if ( MOSQ_ERR_PROTOCOL == rc ) {
+			fprintf(stderr,"# mosquitto error protocol\n");
+		} else if ( MOSQ_ERR_PAYLOAD_SIZE == rc ) {
+			fprintf(stderr,"# mosquitto error payload too large\n");
+		} else if ( MOSQ_ERR_MALFORMED_UTF8 == rc ) {
+			fprintf(stderr,"# mosquitto error topic is not valid UTF-8\n");
+		} else {
+			fprintf(stderr,"# mosquitto unknown error = %d\n",rc);
+		}
 	}
-
-	/* check return status of mosquitto_publish */ 
-	/* this really just checks if mosquitto library accepted the message. Not that it was actually send on the network */
-	if ( MOSQ_ERR_SUCCESS == rc ) {
-		/* successful send */
-	} else if ( MOSQ_ERR_INVAL == rc ) {
-		fprintf(stderr,"# mosquitto error invalid parameters\n");
-	} else if ( MOSQ_ERR_NOMEM == rc ) {
-		fprintf(stderr,"# mosquitto error out of memory\n");
-	} else if ( MOSQ_ERR_NO_CONN == rc ) {
-		fprintf(stderr,"# mosquitto error no connection\n");
-	} else if ( MOSQ_ERR_PROTOCOL == rc ) {
-		fprintf(stderr,"# mosquitto error protocol\n");
-	} else if ( MOSQ_ERR_PAYLOAD_SIZE == rc ) {
-		fprintf(stderr,"# mosquitto error payload too large\n");
-	} else if ( MOSQ_ERR_MALFORMED_UTF8 == rc ) {
-		fprintf(stderr,"# mosquitto error topic is not valid UTF-8\n");
-	} else {
-		fprintf(stderr,"# mosquitto unknown error = %d\n",rc);
+	else {
+		fputs(message,stdout);
 	}
 
 	return	rc;
@@ -192,7 +194,7 @@ int main(int argc, char **argv) {
 
 
 
-	fprintf(stderr,"# BMP280 read utility\n");
+	fprintf(stderr,"# IMT to MQTT tility\n");
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	BMP280_i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
@@ -210,16 +212,22 @@ int main(int argc, char **argv) {
 		        {"LSM9DS1-i2c-address",              required_argument, 0, 'l' },
 		        {"BMP280-i2c-address",               required_argument, 0, 'b' },
 		        {"help",                             no_argument,       0, 'h' },
+		        {"stdout",                           no_argument,       0, 'N' },
 		        {"samplingInterval",                 required_argument, 0, 's' },
 		        {0,                                  0,                 0,  0 }
 		};
 
 		c = getopt_long(argc, argv, "s:T:H:P:vh", long_options, &option_index);
 
-		if (c == -1)
+		if (c == -1) {
 			break;
+		}
+		
 
 		switch (c) {
+			case 'N':
+				disable_mqtt_output = 1;
+				break;
 			case 'T':	
 				strncpy(mqtt_topic,optarg,sizeof(mqtt_topic));
 				break;
@@ -263,14 +271,14 @@ int main(int argc, char **argv) {
 		}
 	}
 	/* check MQTT arguments */
-	if ( ' ' >= mqtt_host[0] ) { 
+	if ( 0 == disable_mqtt_output && ' ' >= mqtt_host[0] ) { 
 		fputs("# <-H mqtt_host>	\n",stderr); 
 		exit(1); 
 	} else {
 		fprintf(stderr,"# mqtt_host=%s\n",mqtt_host);
 	}
 
-	if ( ' ' >= mqtt_topic[0] ) { 
+	if ( 0 == disable_mqtt_output && ' ' >= mqtt_topic[0] ) { 
 		fputs("# <-T mqtt_topic>\n",stderr); 
 		exit(1); 
 	} else { 
@@ -279,7 +287,7 @@ int main(int argc, char **argv) {
 
 
 	/* attempt to start mosquitto */
-	if ( 0 == _mosquitto_startup() ) {
+	if ( 0 == disable_mqtt_output && 0 == _mosquitto_startup() ) {
 		return	1;
 	}
 
@@ -378,7 +386,7 @@ int main(int argc, char **argv) {
 
 		/* convert array to string */
 		char	*s = (char *) json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY);
-		printf("%s\n", s);
+		// printf("%s\n", s);
 
 		/* send to MQTT */
 		rc =  m_pub(s);
@@ -387,9 +395,13 @@ int main(int argc, char **argv) {
 		/* release JSON object */
 		json_object_put(jobj_sensors_LSM9DS1);
 		json_object_put(jobj_sensors_LSM9DS1_gyro);
+		json_object_put(jobj_sensors_LSM9DS1_gyro_array);
 		json_object_put(jobj_sensors_LSM9DS1_accel);
+		json_object_put(jobj_sensors_LSM9DS1_accel_array);
 		json_object_put(jobj_sensors_LSM9DS1_magnet);
+		json_object_put(jobj_sensors_LSM9DS1_magnet_array);
 		json_object_put(jobj_sensors_bmp280);
+		json_object_put(jobj_sensors_bmp280_array);
 		json_object_put(jobj_sensors);
 		json_object_put(jobj);
 		json_object_put(jobj_enclosing);
@@ -403,7 +415,9 @@ int main(int argc, char **argv) {
 	}
 	
 	/* shut down MQTT */
-	_mosquitto_shutdown();
+	if (  0 == disable_mqtt_output ) {
+		_mosquitto_shutdown();
+	}
 
 	fprintf(stderr,"# Done...\n");
 	return	0;

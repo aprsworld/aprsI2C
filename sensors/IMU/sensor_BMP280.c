@@ -16,7 +16,7 @@ Bosch BMP280 pressure and temperature I2C sensor.
 #include <time.h>
 #include "sensor_BMP280.h"
 
-struct json_object *jobj_sensors_bmp280;
+struct json_object *jobj_sensors_bmp280,*jobj_sensors_bmp280_array;
 
 /* BMP280 calibration values that are read once on initialization */
 typedef struct { 
@@ -105,7 +105,7 @@ void bmp280_init(int i2cHandle, int i2cAddress) {
 
 /* read bmp280 device that has been previously configured */
 void bmp280_sample(int i2cHandle, int i2cAddress) {
-	int opResult;
+	int opResult,i;
 	uint8_t reg[1];
 	uint8_t data[8];
 	char buffer[32];
@@ -153,9 +153,17 @@ void bmp280_sample(int i2cHandle, int i2cAddress) {
 	json_object_object_add(jobj_sensors_bmp280, "pressure_HPA", json_object_new_double(pressureHPA));
 	json_object_object_add(jobj_sensors_bmp280, "temperature_C", json_object_new_double(temperatureC));
 
+#if 0
 	snprintf(buffer,sizeof(buffer),"%02x %02x %02x %02x %02x %02x %02x %02x",
 		data[0], data[1],  data[2], data[3], data[4], data[5], data[6], data[7]);
 
 	json_object_object_add(jobj_sensors_bmp280, "sample_0X", json_object_new_string(buffer));
+#endif
+	jobj_sensors_bmp280_array = json_object_new_array();
+	for ( i= 0; 8 > i; i++ ) {
+		json_object_array_add( jobj_sensors_bmp280_array, json_object_new_int(data[i]));
+	}
+	
+	json_object_object_add(jobj_sensors_bmp280, "sample_0X",jobj_sensors_bmp280_array);
 }
 

@@ -53,6 +53,7 @@ int outputDebug=0;
 
 /* JSON stuff */
 struct json_object *jobj_sensors_LSM9DS1,*jobj_sensors_LSM9DS1_gyro,*jobj_sensors_LSM9DS1_accel,*jobj_sensors_LSM9DS1_magnet;
+struct json_object *jobj_sensors_LSM9DS1_gyro_array,*jobj_sensors_LSM9DS1_accel_array,*jobj_sensors_LSM9DS1_magnet_array;
 
 void  readBlock(uint8_t command, uint8_t size, uint8_t *data)
 {
@@ -266,14 +267,10 @@ void enableIMU(void)
 
 }
 
-static void _build_raw_format(char *d,int *raw, int count ) {
-	char buffer[16];
+static void _build_raw_array(struct json_object *j_array_obj, int *raw, int count ) {
 	int *raw_end = raw + count;
-	d[0] = '\0';
 	for ( ; raw < raw_end ; raw++ ) {
-		snprintf(buffer,sizeof(buffer),"%08x",*raw);
-		strcat(d,buffer + 4);
-		strcat(d," ");
+		json_object_array_add(j_array_obj, json_object_new_int(*raw));
 	}
 }
 
@@ -392,15 +389,17 @@ void LSM9DS1_sample(int i2cHandle, int i2cAddress) {
 	json_object_object_add(jobj_sensors_LSM9DS1_magnet, "magnet_heading", json_object_new_string(buffer));
 
 	/* put raw data from the three sensos */
-	// snprintf(buffer,sizeof(buffer),raw_fmt,(int16_t)accRaw[0],(int16_t)accRaw[1],(int16_t)accRaw[2]);
-	_build_raw_format(buffer,accRaw,3);
-	json_object_object_add( jobj_sensors_LSM9DS1_accel, "sample_0X", json_object_new_string(buffer));
+	jobj_sensors_LSM9DS1_accel_array = json_object_new_array();
+	_build_raw_array(jobj_sensors_LSM9DS1_accel_array,accRaw,3);
+	json_object_object_add( jobj_sensors_LSM9DS1_accel, "sample_0X", jobj_sensors_LSM9DS1_accel_array);
 
-	_build_raw_format(buffer,gyrRaw,3);
-	json_object_object_add( jobj_sensors_LSM9DS1_gyro, "sample_0X", json_object_new_string(buffer));
+	jobj_sensors_LSM9DS1_gyro_array = json_object_new_array();
+	_build_raw_array(jobj_sensors_LSM9DS1_gyro_array,gyrRaw,3);
+	json_object_object_add( jobj_sensors_LSM9DS1_gyro, "sample_0X", jobj_sensors_LSM9DS1_gyro_array);
 
-	_build_raw_format(buffer,magRaw,3);
-	json_object_object_add( jobj_sensors_LSM9DS1_magnet, "sample_0X", json_object_new_string(buffer));
+	jobj_sensors_LSM9DS1_magnet_array =  json_object_new_array();
+	_build_raw_array(jobj_sensors_LSM9DS1_magnet_array,magRaw,3);
+	json_object_object_add( jobj_sensors_LSM9DS1_magnet, "sample_0X", jobj_sensors_LSM9DS1_magnet_array);
 
 	/* put gyro, accel, and magnet into main LSM9DS1 */
 	json_object_object_add(jobj_sensors_LSM9DS1, "gyrometer", jobj_sensors_LSM9DS1_gyro);
