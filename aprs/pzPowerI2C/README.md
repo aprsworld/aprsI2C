@@ -4,16 +4,25 @@ The default I2C address for pzPowerI2C board is `0x1a`. This is defined in [pzPo
 
 ## Build requirements
 
-`libjson-c-dev` is required. Install with `sudo apt-get install libjson-c-dev`.
+`libjson-c-dev` and `mosquitto-dev` are required. Install with `sudo apt-get install libjson-c-dev mosquitto-dev`.
 
 Build with `make`
 
 ## Command line arguments
+### program arguements
+pzPowerI2C can optionally send the read JSON data to a MQTT broker. Use `--read-loop milliseconds` to read and send results continuously
+
+switch|argument|description
+---|---|---
+--mqtt-host|hostname|MQTT host to optionally send data to
+--mqtt-port|port number|MQQT host port number
+
 ### options for reading status and clearing latches
 <!--- 300 series -->
 switch|argument|description
 ---|---|---
 --read|(none)|read current state and send to stdout in JSON format
+--read-loop|milliseconds|read current state at millisecond interval. All other actions will be performed first, but only once
 --read-switch|(none)|read state of magnetic switch and latch and set exit value (see [--read-switch Exit Status](#--read-switch-exit-status))
 --reset-switch-latch|(none)|clear the latch of the magnetic switch. Will happen after `--read` or `--read-switch`
 --reset-write-watchdog|(none)|resets the write watchdog
