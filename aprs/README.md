@@ -9,4 +9,4 @@ switch|argument|description
 --help|(none)|print help message
 
 ## pzPowerI2C
-See [pzPowerI2C.md](pzPowerI2C.md) for details.
+See [pzPowerI2C/](pzPowerI2C/) for details.
