@@ -11,6 +11,8 @@
 #include <arpa/inet.h>
 #include <math.h>
 #include <json.h>
+#include <mosquitto.h>
+
 
 #include "pzPowerI2C_registers.h"
  
@@ -18,7 +20,7 @@ extern char *optarg;
 extern int optind, opterr, optopt;
 
 /* processed data read from pzPowerI2C at start */
-struct json_object *jobj, *jobj_data, *jobj_power_off_flags, *jobj_configuration;
+struct json_object *jobj_enclosing,*jobj, *jobj_data, *jobj_power_off_flags, *jobj_configuration;
 
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
@@ -26,8 +28,20 @@ struct json_object *jobj, *jobj_data, *jobj_power_off_flags, *jobj_configuration
 /* byte capacity of device */
 #define CAPACITY_BYTES 128
 
+int outputDebug=0;
+
+static struct mosquitto *mosq;
+
 /* actions to take */
 typedef struct {
+	/* MQTT */
+	int mqtt;
+	int mqtt_port;
+	char mqtt_host[256];
+	char mqtt_topic[256];
+
+
+	/* program flow */
 	int reRead;
 
 	int readLoop;
@@ -365,14 +379,84 @@ int voltageToADC(double voltage) {
 	return (int) step;
 }
 
+static struct mosquitto * _mosquitto_startup(void) {
+	char clientid[24];
+	int rc = 0;
+
+
+	fprintf(stderr,"# initializing mosquitto MQTT library\n");
+	mosquitto_lib_init();
+
+	memset(clientid, 0, 24);
+	snprintf(clientid, 23, "pzPowerI2C_%d", getpid());
+	mosq = mosquitto_new(clientid, true, 0);
+
+	if (mosq) {
+		fprintf(stderr,"# connecting to MQTT server %s:%d\n",action.mqtt_host,action.mqtt_port);
+		rc = mosquitto_connect(mosq, action.mqtt_host, action.mqtt_port, 60);
+
+		/* start mosquitto network handling loop */
+		mosquitto_loop_start(mosq);
+	}
+	return	mosq;
+}
+
+static void _mosquitto_shutdown(void) {
+	fprintf(stderr,"# shutting down mosquitto MQTT connection\n");
+
+	if ( mosq ) {
+		/* disconnect mosquitto so we can be done */
+		mosquitto_disconnect(mosq);
+		/* stop mosquitto network handling loop */
+		mosquitto_loop_stop(mosq,0);
+
+		mosquitto_destroy(mosq);
+	}
+
+	mosquitto_lib_cleanup();
+}
+
+int m_pub(const char *message ) {
+	int rc = 0;
+	static int messageID;
+	/* instance, message ID pointer, topic, data length, data, qos, retain */
+	rc = mosquitto_publish(mosq, &messageID, action.mqtt_topic, strlen(message), message, 0, 0); 
+
+	if (0 != outputDebug) { 
+		fprintf(stderr,"# mosquitto_publish provided messageID=%d and return code=%d\n",messageID,rc);
+	}
+
+	/* check return status of mosquitto_publish */ 
+	/* this really just checks if mosquitto library accepted the message. Not that it was actually send on the network */
+	if ( MOSQ_ERR_SUCCESS == rc ) {
+		/* successful send */
+	} else if ( MOSQ_ERR_INVAL == rc ) {
+		fprintf(stderr,"# mosquitto error invalid parameters\n");
+	} else if ( MOSQ_ERR_NOMEM == rc ) {
+		fprintf(stderr,"# mosquitto error out of memory\n");
+	} else if ( MOSQ_ERR_NO_CONN == rc ) {
+		fprintf(stderr,"# mosquitto error no connection\n");
+	} else if ( MOSQ_ERR_PROTOCOL == rc ) {
+		fprintf(stderr,"# mosquitto error protocol\n");
+	} else if ( MOSQ_ERR_PAYLOAD_SIZE == rc ) {
+		fprintf(stderr,"# mosquitto error payload too large\n");
+	} else if ( MOSQ_ERR_MALFORMED_UTF8 == rc ) {
+		fprintf(stderr,"# mosquitto error topic is not valid UTF-8\n");
+	} else {
+		fprintf(stderr,"# mosquitto unknown error = %d\n",rc);
+	}
+	return	rc;
+}
+
 int main(int argc, char **argv) {
 	/* optarg */
 	int c;
 	int digit_optind = 0;
 
 	/* program flow */
-
 	int exitValue=0;
+	int rc;
+	char *s;
 
 	/* I2C stuff */
 	char i2cDevice[64];	/* I2C device name */
@@ -394,6 +478,11 @@ int main(int argc, char **argv) {
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	i2cAddress=0x1a;		/* default address of pzPower in pzPowerI2C.h */ 	
+
+	action.mqtt=0;
+	strcpy(action.mqtt_host,"localhost");
+	action.mqtt_port=1883;
+	strcpy(action.mqtt_topic,"pzPowerI2C");
 
 	while (1) {
 		int this_option_optind = optind ? optind : 1;
@@ -434,6 +523,10 @@ int main(int argc, char **argv) {
 		        {"set-startup-power-on-delay",       required_argument, 0, 10030 },
 
 			/* normal program */
+			{"mqtt",                             no_argument,       0, 'm' },
+			{"mqtt-host",                        required_argument, 0, 'H' },
+			{"mqtt-port",                        required_argument, 0, 'P' },
+			{"mqtt-topic",                       required_argument, 0, 'T' },
 		        {"i2c-device",                       required_argument, 0, 'i' },
 		        {"i2c-address",                      required_argument, 0, 'a' },
 		        {"help",                             no_argument,       0, 'h' },
@@ -556,6 +649,22 @@ int main(int argc, char **argv) {
 			case '?':
 				/* getopt error of missing argument or unknown option */
 				exit(1);
+	
+			case 'm':
+				action.mqtt=1;
+				break;
+			case 'H':
+				strncpy(action.mqtt_host,optarg,sizeof(action.mqtt_host)-1);
+				action.mqtt_host[sizeof(action.mqtt_host)-1]='\0';
+				break;
+			case 'P':
+				sscanf(optarg,"%d",&action.mqtt_port);
+				break;
+			case 'T':
+				strncpy(action.mqtt_topic,optarg,sizeof(action.mqtt_topic)-1);
+				action.mqtt_topic[sizeof(action.mqtt_topic)-1]='\0';
+				break;
+
 			case 'h':
 				printUsage();
 				exit(0);	
@@ -574,6 +683,11 @@ int main(int argc, char **argv) {
 	/* start-up verbosity */
 	fprintf(stderr,"# using I2C device %s\n",i2cDevice);
 	fprintf(stderr,"# using I2C device address of 0x%02X\n",i2cAddress);
+	if ( action.mqtt ) {
+		fprintf(stderr,"# MQTT enabled to host='%s' port='%d' topic='%s'\n",action.mqtt_host,action.mqtt_port,action.mqtt_topic);
+	} else {
+		fprintf(stderr,"# MQTT disabled\n");
+	}
 
 
 	/* Open I2C bus */
@@ -765,11 +879,16 @@ int main(int argc, char **argv) {
 		action.reRead=1;
 	}
 
+	/* attempt to start mosquitto */
+	if ( action.mqtt && 0 == _mosquitto_startup() ) {
+		return	1;
+	}
 
 	
 	do {
 		if ( action.reRead ) {
 			/* release JSON objects */
+			json_object_put(jobj_enclosing);
 			json_object_put(jobj);
 			json_object_put(jobj_configuration); 
 			json_object_put(jobj_power_off_flags); 
@@ -780,15 +899,27 @@ int main(int argc, char **argv) {
 		}
 
 		/* print JSON output */
-		printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+		/* enclose array */
+		jobj_enclosing = json_object_new_object();
+		json_object_object_add(jobj_enclosing, "pzPowerI2C", jobj);
+
+		/* convert JSON object to string */
+		s = (char *) json_object_to_json_string_ext(jobj_enclosing, JSON_C_TO_STRING_PRETTY);
+
+		/* print to stdout */
+		printf("%s\n", s);
+
+		/* send to MQTT */
+		if ( action.mqtt ) {
+			rc =  m_pub(s);
+		}
 		
 
 		if ( action.readLoop ) {
 			action.reRead=1;
 			/* wait interval */
-			/* TODO replace with millisecond sleep interval thing from imu code */
-			fprintf(stderr,"# readLoop should interval @ %d\n",action.readLoop_value);
-			sleep(1);
+			fprintf(stderr,"# sleeping %d seconds before next read\n",action.readLoop_value);
+			sleep(action.readLoop_value);
 		} else {
 			action.reRead=0;
 		}
@@ -799,6 +930,11 @@ int main(int argc, char **argv) {
 	json_object_put(jobj_configuration); 
 	json_object_put(jobj_power_off_flags); 
 	json_object_put(jobj_data); 
+
+	/* shut down MQTT */
+	if ( action.mqtt ) {
+		_mosquitto_shutdown();
+	}
 
 
 	/* close I2C */
@@ -811,4 +947,3 @@ int main(int argc, char **argv) {
 
 	exit(exitValue);
 }
-

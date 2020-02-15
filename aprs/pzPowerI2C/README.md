@@ -10,19 +10,21 @@ Build with `make`
 
 ## Command line arguments
 ### program arguements
-pzPowerI2C can optionally send the read JSON data to a MQTT broker. Use `--read-loop milliseconds` to read and send results continuously
+pzPowerI2C can optionally send the read JSON data to a MQTT broker. Use `--read-loop seconds` to read and send results continuously
 
 switch|argument|description
 ---|---|---
---mqtt-host|hostname|MQTT host to optionally send data to
+--mqtt|(none)|enable sending of data to MQTT broker
+--mqtt-host|hostname|MQTT host 
 --mqtt-port|port number|MQQT host port number
+--mqtt-topic|topic|MQQT topic
 
 ### options for reading status and clearing latches
 <!--- 300 series -->
 switch|argument|description
 ---|---|---
 --read|(none)|read current state and send to stdout in JSON format
---read-loop|milliseconds|read current state at millisecond interval. All other actions will be performed first, but only once
+--read-loop|seconds|read current state at seconds delay between each read. All other actions will be performed first, but only once
 --read-switch|(none)|read state of magnetic switch and latch and set exit value (see [--read-switch Exit Status](#--read-switch-exit-status))
 --reset-switch-latch|(none)|clear the latch of the magnetic switch. Will happen after `--read` or `--read-switch`
 --reset-write-watchdog|(none)|resets the write watchdog
