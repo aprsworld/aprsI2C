@@ -30,6 +30,9 @@ struct json_object *jobj, *jobj_data, *jobj_power_off_flags, *jobj_configuration
 typedef struct {
 	int reRead;
 
+	int readLoop;
+	int readLoop_value;
+
 	/* 300 series */
 	int read;
 	int readSwitch;
@@ -399,6 +402,7 @@ int main(int argc, char **argv) {
 			/* flags that we set here */
 			/* 300 series commands as defined in pzPowerI2C.md */
 			{"read",                             no_argument,       0, 300 },
+			{"read-loop",                        required_argument, 0, 305 },
 			{"read-switch",                      no_argument,       0, 310 }, 
 			{"reset-switch-latch",               no_argument,       0, 320 },
 			{"reset-write-watchdog",             no_argument,       0, 330 },
@@ -444,6 +448,10 @@ int main(int argc, char **argv) {
 		switch (c) {
 			/* 300 series */
 			case 300: flagProccess(&action.read,"read"); break;
+			case 305:
+				flagProccess(&action.readLoop,"read-loop"); 
+				action.readLoop_value = rangeCheckInt("read-loop",atoi(optarg),0,65534);
+				break;
 			case 310: flagProccess(&action.readSwitch,"read-switch"); break;
 			case 320: flagProccess(&action.resetSwitchLatch,"reset-switch-latch"); break;
 			case 330: flagProccess(&action.resetWriteWatchdog,"reset-write-watchdog"); break;
@@ -758,23 +766,40 @@ int main(int argc, char **argv) {
 	}
 
 
-	if ( action.reRead ) {
-		/* clear the first read's JSON objects */
-		json_object_put(jobj);
-		json_object_put(jobj_configuration); 
-		json_object_put(jobj_data); 
+	
+	do {
+		if ( action.reRead ) {
+			/* release JSON objects */
+			json_object_put(jobj);
+			json_object_put(jobj_configuration); 
+			json_object_put(jobj_power_off_flags); 
+			json_object_put(jobj_data); 
 
-		read_pzpoweri2c(i2cHandle);
-	}
+			/* re read and create new JSON objects */
+			read_pzpoweri2c(i2cHandle);
+		}
 
+		/* print JSON output */
+		printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+		
 
-	printf("%s\n", json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY));
+		if ( action.readLoop ) {
+			action.reRead=1;
+			/* wait interval */
+			/* TODO replace with millisecond sleep interval thing from imu code */
+			fprintf(stderr,"# readLoop should interval @ %d\n",action.readLoop_value);
+			sleep(1);
+		} else {
+			action.reRead=0;
+		}
+	} while ( action.reRead );
 
 	/* release JSON objects */
 	json_object_put(jobj);
 	json_object_put(jobj_configuration); 
 	json_object_put(jobj_power_off_flags); 
 	json_object_put(jobj_data); 
+
 
 	/* close I2C */
 	if ( -1 == close(i2cHandle) ) {
@@ -784,9 +809,6 @@ int main(int argc, char **argv) {
 	
 	fprintf(stderr,"# Done...\n");
 
-//	fprintf(stderr,"#### voltageToADC(13.945)=%d\n",voltageToADC(13.945));
-
-	
 	exit(exitValue);
 }
 

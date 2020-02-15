@@ -50,12 +50,14 @@ void printUsage(void) {
 	fprintf(stderr,"-h                                      this message\n");
 	fprintf(stderr,"--help                                  this message\n");
 }
+
+#if 0
 static uint64_t microtime(void) {
 	struct timeval time;
 	gettimeofday(&time, NULL); 
 	return ((uint64_t)time.tv_sec * 1000000) + time.tv_usec;
 }
-
+#endif
 
 
 /*   waits until the milliseond time changes fro before when to after when */
@@ -194,7 +196,7 @@ int main(int argc, char **argv) {
 
 
 
-	fprintf(stderr,"# IMT to MQTT tility\n");
+	fprintf(stderr,"# IMU sensor to MQTT tility\n");
 
 	strcpy(i2cDevice,"/dev/i2c-1"); /* Raspberry PI normal user accessible I2C bus */
 	BMP280_i2cAddress=0x77;		/* default address of BMP280 device is 0x77. It can also be 0x76 */ 	
