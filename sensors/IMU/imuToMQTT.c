@@ -77,21 +77,23 @@ void wait_for_it(int interval ) {
 
 
 	for ( ;; ) {
-		while ( 0 != gettimeofday( &start_time, (struct timezone *) 0))
-			;
+		while ( 0 != gettimeofday( &start_time, (struct timezone *) 0)) {
+			usleep(2500);
+		}
 		if ( when > start_time.tv_usec )
 			break;
+		/*   start_time.tv_usec > when */
+		usleep((1000000-start_time.tv_usec)>>1);
 	}
 	for ( ;; ) {
-		while ( 0 != gettimeofday( &start_time, (struct timezone *) 0))
-			;
+		while ( 0 != gettimeofday( &start_time, (struct timezone *) 0)) {
+			usleep(2500);
+		}
 		if ( when <= start_time.tv_usec )
 			break;
+		usleep((when - start_time.tv_usec)>>1);
 	}
 	/* okay we transition from before to after */
-}
-void connect_callback(struct mosquitto *mosq, void *obj, int result) {
-	printf("# connect_callback, rc=%d\n", result);
 }
 
 static struct mosquitto * _mosquitto_startup(void) {
@@ -109,8 +111,6 @@ static struct mosquitto * _mosquitto_startup(void) {
 	mosq = mosquitto_new(clientid, true, 0);
 
 	if (mosq) {
-		mosquitto_connect_callback_set(mosq, connect_callback);
-
 		fprintf(stderr,"# connecting to MQTT server %s:%d\n",mqtt_host,mqtt_port);
 		rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
 
