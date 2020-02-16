@@ -14,6 +14,8 @@ Utilities are, by default, verbose. All debugging output is sent to stderr. To n
 
 Enable I2C using `sudo raspi-config`
 
+If non-root users are to be allowed, they must be in the `i2c` group. Add user to the group with `adduser user i2c` where `user` is the username you wish to add.
+
 ## Optional support tools 
 Install Linux I2C support utilities with `sudo apt-get install -y i2c-tools`
 
