@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <arpa/inet.h>
 #include <math.h>
+#include <time.h>
+#include <sys/time.h>
 #include <json.h>
 #include <mosquitto.h>
 
@@ -167,6 +169,25 @@ int voltageToAdc(double voltage) {
 	return round( voltage / (40.0 / 1024.0) );
 }
 
+json_object *json_object_new_dateTime(void) {
+	struct tm *now;
+	struct timeval time;
+	char timestamp[32];
+        gettimeofday(&time, NULL);
+	now = localtime(&time.tv_sec);
+	if ( 0 == now ) {
+		fprintf(stderr,"# error calling localtime() %s",strerror(errno));
+		exit(1);
+	}
+
+	snprintf(timestamp,sizeof(timestamp),"%04d-%02d-%02d %02d:%02d:%02d.%03ld",
+		1900 + now->tm_year,1 + now->tm_mon, now->tm_mday,now->tm_hour,now->tm_min,now->tm_sec,time.tv_usec/1000);
+
+	
+	return	json_object_new_string(timestamp);
+
+}
+
 void decodeRegisters(uint16_t *rxBuffer) {
 	int i;
  
@@ -181,6 +202,7 @@ void decodeRegisters(uint16_t *rxBuffer) {
 
 
 	/* data */
+	json_object_object_add(jobj,"dateTime",json_object_new_dateTime());
 
 	/* input voltage */
 	json_object_object_add(jobj_data, "voltage_in_now",json_object_new_double(
@@ -328,6 +350,10 @@ void printUsage(void) {
 	fprintf(stderr,"========================================================================================================\n");
 	fprintf(stderr,"--i2c-device     device         /dev/ entry for I2C-dev device\n");
 	fprintf(stderr,"--i2c-address    chip address   hex address of chip\n");
+	fprintf(stderr,"--mqtt           none           send data to MQTT\n");
+	fprintf(stderr,"--mqtt-host      hostname       MQTT broker\n");
+	fprintf(stderr,"--mqtt-port      port number    MQTT broker\n");
+	fprintf(stderr,"--mqtt-topic     port number    MQTT topic\n");
 	fprintf(stderr,"--help                          this message\n");
 }
 
