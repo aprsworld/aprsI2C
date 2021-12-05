@@ -15,8 +15,14 @@ extern int optind, opterr, optopt;
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
 
-/* byte capacity of EEPROM */
-#define CAPACITY_BYTES 256
+/* 
+byte capacity of EEPROM:
+this device is a little different. It is 256 bytes, but the upper 128 bytes are write protected 
+and the top most 6 bytes have a globally unique MAC address programmed by microchip. 
+So address 0x80 to 0xfa are write product and contain nothing from the factory.
+So we'll set the capacity at 128 bytes, and have a --read-mac option as the only thing that accesses that extra space
+*/
+#define CAPACITY_BYTES 128
 
 int main(int argc, char **argv) {
 	/* optarg */
@@ -105,14 +111,14 @@ int main(int argc, char **argv) {
 			case 's':
 				startAddress=atoi(optarg);
 				if ( startAddress<0 || startAddress>8191 ) {
-					fprintf(stderr,"# start address out of range (0 to 8191)\n# Exiting...\n");
+					fprintf(stderr,"# start address out of range (0 to %d)\n# Exiting...\n",CAPACITY_BYTES);
 					exit(1);
 				} 
 				break;
 			case 'n':
 				nBytes=atoi(optarg);
 				if ( nBytes<1 || nBytes>CAPACITY_BYTES ) {
-					fprintf(stderr,"# number of bytes out of range (1 to CAPACITY_BYTES)\n# Exiting...\n");
+					fprintf(stderr,"# number of bytes out of range (1 to %d)\n# Exiting...\n",CAPACITY_BYTES);
 					exit(1);
 				} 
 				if ( nBytes+startAddress>CAPACITY_BYTES ) {
@@ -199,8 +205,8 @@ int main(int argc, char **argv) {
 
 //			printf("# start of do {} loop: address=%d bytesWeCanWrite=%d\n",address,bytesWeCanWrite);
 
-			/* read up to bytesWeCanWrite bytes + save two bytes for address */
-			for ( i=2 ; i<(bytesWeCanWrite+2) && bytesRead < nBytes ; i++,bytesRead++ ) {
+			/* read up to bytesWeCanWrite bytes + save one bytes for address */
+			for ( i=1 ; i<(bytesWeCanWrite+1) && bytesRead < nBytes ; i++,bytesRead++ ) {
 				int c=fgetc(fp);
 
 				txBuffer[i] = c;
@@ -230,10 +236,8 @@ int main(int argc, char **argv) {
 #endif
 
 
-			/* address high byte */
-//			txBuffer[0] = ((address>>8) & 0b00011111);
 			/* address low byte */
-			txBuffer[1] = (address & 0b11111111);
+			txBuffer[0] = (address & 0b11111111);
 
 			/* write */
 			opResult = write(i2cHandle, txBuffer, i);
@@ -276,15 +280,13 @@ int main(int argc, char **argv) {
 				fprintf(stderr,"# adding null after last byte. null at address %d due to --string mode.\n",nullAddress);
 			}
 
-			/* address high byte */
-//			txBuffer[0] = ((nullAddress>>8) & 0b00011111);
 			/* address low byte */
-			txBuffer[1] = (nullAddress & 0b11111111);
+			txBuffer[0] = (nullAddress & 0b11111111);
 			/* null byte */
-			txBuffer[2] = '\0';
+			txBuffer[1] = '\0';
 
 			/* write */
-			opResult = write(i2cHandle, txBuffer, 3);
+			opResult = write(i2cHandle, txBuffer, 2);
 
 			/* poll for acknowledgement so we can write the next page */
 			for ( nTries=0 ; ; nTries++ ) {
@@ -312,17 +314,31 @@ int main(int argc, char **argv) {
 
 
 	/* do any requested reading after sets */
-	if ( dumpRead ) {
+	if ( macRead ) {
 
-		/* address high byte */
-//		txBuffer[0] = 0x00;
-		/* address low byte */
-		txBuffer[1] = 0x00;
+		txBuffer[0] = 0xfa;
 
 		/* write read address */
-//		opResult = write(i2cHandle, txBuffer, 2);
 		opResult = write(i2cHandle, txBuffer, 1);
-		if (opResult != 2) {
+		if (opResult != 1) {
+			fprintf(stderr,"# No ACK! Exiting...\n");
+			exit(2);
+		}
+
+		/*  read 6 bytes */
+		memset(rxBuffer, 0, 6);
+		opResult = read(i2cHandle, rxBuffer, 6);
+
+		fprintf(stderr,"# MAC address\n");
+		printf("%02x:%02x:%02x:%02x:%02x:%02x\n",rxBuffer[0],rxBuffer[1],rxBuffer[2],rxBuffer[3],rxBuffer[4],rxBuffer[5]);
+	} else if ( dumpRead ) {
+
+		/* address low byte */
+		txBuffer[0] = 0x00;
+
+		/* write read address */
+		opResult = write(i2cHandle, txBuffer, 1);
+		if (opResult != 1) {
 			fprintf(stderr,"# No ACK! Exiting...\n");
 			exit(2);
 		}
@@ -350,15 +366,12 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 
-		/* address high byte */
-//		txBuffer[0] = ((startAddress>>8) & 0b00011111);
 		/* address low byte */
-		txBuffer[1] = (startAddress & 0b11111111);
+		txBuffer[0] = (startAddress & 0b11111111);
 
 		/* write read address */
-//		opResult = write(i2cHandle, txBuffer, 2);
 		opResult = write(i2cHandle, txBuffer, 1);
-		if (opResult != 2) {
+		if (opResult != 1) {
 			fprintf(stderr,"# No ACK! Exiting...\n");
 			exit(2);
 		}
