@@ -14,7 +14,8 @@ switch|argument|description
 --i2c-device|device|`/dev/` entry for I2C-dev device
 --i2c-address|chip address|hex address of chip
 
-## mac_24AA02E48T special arguments / operations
+### Device specific arguments / operations
+#### mac_24AA02E48T
 This is a special 256 byte EEPROM that has a globally unqiue MAC address programmed in the top 6 bytes. The top 128 bytes are write protected. So it is essentially a 128 byte EEPROM + read only MAC address.
 
 switch|argument|description
@@ -22,6 +23,7 @@ switch|argument|description
 --read-mac|(done)|Print ':' separated 6 byte MAC address to stdout
 
 
+## Examples
 ### Example: Write output of ifconfig to EEPROM as a string, starting at address 128, with 2048 byte limit
 ```
 mwp@raspberrypi:~/aprsI2C/eeprom $ ifconfig | ./eeprom_2464 --string --write /dev/stdin --start-address 128 --n-bytes 2048 
