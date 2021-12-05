@@ -15,7 +15,7 @@ switch|argument|description
 --i2c-address|chip address|hex address of chip
 
 ### Device specific arguments / operations
-#### mac_24AA02E48T
+#### mac\_24AA02E48T
 This is a special 256 byte EEPROM that has a globally unqiue MAC address programmed in the top 6 bytes. The top 128 bytes are write protected. So it is essentially a 128 byte EEPROM + read only MAC address.
 
 switch|argument|description
@@ -41,7 +41,7 @@ mwp@raspberrypi:~/aprsI2C/eeprom $ ifconfig | ./eeprom_2464 --string --write /de
 ```
 
 ### Example: Read that back and write to a file called test2
-````
+```
 mwp@raspberrypi:~/aprsI2C/eeprom $ ./eeprom_2464 --string --read test2 --start-address 128  --n-bytes 2048
 # ee_2464 24AA64 / 24LC64 EEPROM I2C utility
 # using I2C device /dev/i2c-1
@@ -52,4 +52,19 @@ mwp@raspberrypi:~/aprsI2C/eeprom $ ./eeprom_2464 --string --read test2 --start-a
 # read string mode (stopping before first null)
 # 2048 bytes read
 # Done...
-````
+```
+
+### Example: read MAC address from mac\_24AA02E48T
+```
+
+aprs@raspberrypi:~/aprsI2C/eeprom $ ./mac_24AA02E48T --read-mac
+# mac_24AA02E48T MAC address EEPROM I2C utility
+# using I2C device /dev/i2c-1
+# using I2C device address of 0x50
+# start address: 0
+# bytes to read / write: 128
+# MAC address
+d8:80:39:68:6c:e4
+# Done...
+```
+
