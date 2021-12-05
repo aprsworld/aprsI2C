@@ -27,8 +27,8 @@ struct json_object *jobj_enclosing,*jobj, *jobj_data, *jobj_power_off_flags, *jo
 /* number of acknowledgement cycles to poll on write for */
 #define TIMEOUT_NTRIES 50
 
-/* byte capacity of device */
-#define CAPACITY_BYTES 128
+/* maximum number of registers on pzPower I2C slave. Each register is 2 bytes */
+#define CAPACITY_REGISTERS 64
 
 int outputDebug=0;
 
@@ -297,20 +297,30 @@ void decodeRegisters(uint16_t *rxBuffer) {
 }
 
 void read_pzpoweri2c(int i2cHandle) {
-	uint16_t rxBuffer[CAPACITY_BYTES];	/* receive buffer */
-	uint8_t txBuffer[1];			/* transmit buffer (extra byte is address byte) */
-	int opResult = 0;	/* for error checking of operations */
+	uint16_t rxBuffer[CAPACITY_REGISTERS]; 	/* receive buffer */
+	uint8_t txBuffer[1];			/* transmit buffer */
+	int opResult = 0;			/* for error checking of operations */
 	uint8_t address;
 	int i;
-	int startAddress=0;
-	int nRegisters=64;
+	int nRegisters=CAPACITY_REGISTERS;
 
-	txBuffer[0] = ( (startAddress*2) & 0b11111111);
+	/* start reading from address 0 */
+	txBuffer[0]=0; 	
 
-//	fprintf(stderr,"# txBuffer[0]=0x%02x\n",txBuffer[0]);
+	if ( 0 != outputDebug ) { 
+		fprintf(stderr,"# read_pzpoweri2c() starting\n");
+		fprintf(stderr,"# CAPACITY_REGISTERS=%d\n",CAPACITY_REGISTERS);
+		fprintf(stderr,"# sizeof(rxBuffer)=%d\n",sizeof(rxBuffer));
+		fprintf(stderr,"# txBuffer[0]=0x%02x (this is the starting address)\n",txBuffer[0]);
+		fprintf(stderr,"# write(i2cHandle,txBuffer[0],1) starting\n");
+	}
 
 	/* write read address */
-	opResult = write(i2cHandle, txBuffer, 1);
+	opResult = write(i2cHandle, txBuffer, sizeof(txBuffer));
+
+	if ( 0 != outputDebug ) { 
+		fprintf(stderr,"# write opResult=%d\n");
+	}
 
 
 	if (opResult != 1) {
@@ -318,25 +328,44 @@ void read_pzpoweri2c(int i2cHandle) {
 		exit(2);
 	}
 
-	/* read registers into rxBuffer */
+	/* clear rxbuffer */
 	memset(rxBuffer, 0, sizeof(rxBuffer));
+	/* read registers into rxBuffer */
 	opResult = read(i2cHandle, rxBuffer, nRegisters*2);
-//	fprintf(stderr,"# %d bytes read starting at register %d\n",opResult,startAddress);
+
+	if ( 0 != outputDebug ) { 
+		fprintf(stderr,"# read opResult=%d (bytes read)\n",opResult);
+
+		for ( i=0 ; i<opResult/2 ; i++ ) {
+			uint16_t u;
+
+			u=rxBuffer[i];
+			fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,u,u);
+
+			if ( u >= 32 && u <= 126 ) {
+				fprintf(stderr," '%c'",u);
+			} else { 
+				fprintf(stderr," ---");
+			}
+
+			u=ntohs(rxBuffer[i]);
+			fprintf(stderr,"     >>>>> ntohs() 0x%04x (%5d)",u,u);
+
+			if ( u >= 32 && u <= 126 ) {
+				fprintf(stderr," '%c'",u);
+			} else { 
+				fprintf(stderr," ---");
+			}
+
+			fprintf(stderr,"<<<<<\n");
+		}
+	}
+
 
 	/* results */
 	for ( i=0 ; i<nRegisters ; i++ ) {
 		/* pzPowerI2C PIC sends high byte and then low byte */
 		rxBuffer[i]=ntohs(rxBuffer[i]);
-
-#if 0
-		fprintf(stderr,"# reg[%03d] = 0x%04x (%5d)",i,rxBuffer[i],rxBuffer[i]);
-
-		if ( rxBuffer[i] >= 32 && rxBuffer[i] <= 126 ) {
-			fprintf(stderr," '%c'",rxBuffer[i]);
-		} 
-		fprintf(stderr,"\n");
-#endif
-
 	}
 
 	/* decode data and put into JSON objects */
@@ -347,13 +376,14 @@ void read_pzpoweri2c(int i2cHandle) {
 void printUsage(void) {
 	fprintf(stderr,"Usage:\n\n");
 	fprintf(stderr,"switch           argument       description\n");
-	fprintf(stderr,"========================================================================================================\n");
+	fprintf(stderr,"===========================================================================\n");
 	fprintf(stderr,"--i2c-device     device         /dev/ entry for I2C-dev device\n");
 	fprintf(stderr,"--i2c-address    chip address   hex address of chip\n");
 	fprintf(stderr,"--mqtt           none           send data to MQTT\n");
 	fprintf(stderr,"--mqtt-host      hostname       MQTT broker\n");
 	fprintf(stderr,"--mqtt-port      port number    MQTT broker\n");
 	fprintf(stderr,"--mqtt-topic     port number    MQTT topic\n");
+	fprintf(stderr,"--debug          none           some additional debugging information\n");
 	fprintf(stderr,"--help                          this message\n");
 }
 
@@ -489,7 +519,7 @@ int main(int argc, char **argv) {
 	int i2cAddress; 	/* chip address */
 
 
-	uint8_t txBuffer[CAPACITY_BYTES+1];	/* transmit buffer (extra byte is address byte) */
+//	uint8_t txBuffer[CAPACITY_BYTES+1];	/* transmit buffer (extra byte is address byte) */
 	int opResult = 0;	/* for error checking of operations */
 	uint8_t address;
 
@@ -556,6 +586,7 @@ int main(int argc, char **argv) {
 		        {"i2c-device",                       required_argument, 0, 'i' },
 		        {"i2c-address",                      required_argument, 0, 'a' },
 		        {"help",                             no_argument,       0, 'h' },
+		        {"debug",                            no_argument,       0, 'd' },
 		        {0,                                  0,                 0,  0 }
 		};
 
@@ -678,6 +709,9 @@ int main(int argc, char **argv) {
 	
 			case 'm':
 				action.mqtt=1;
+				break;
+			case 'd':
+				outputDebug=1;
 				break;
 			case 'H':
 				strncpy(action.mqtt_host,optarg,sizeof(action.mqtt_host)-1);

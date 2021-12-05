@@ -4,7 +4,7 @@ The default I2C address for pzPowerI2C board is `0x1a`. This is defined in [pzPo
 
 ## Build requirements
 
-`libjson-c-dev` and `mosquitto-dev` are required. Install with `sudo apt-get install libjson-c-dev mosquitto-dev`.
+`libjson-c-dev` and `mosquitto-dev` and `libmosquitto-dev` are required. Install with `sudo apt-get install libjson-c-dev mosquitto-dev libmosquitto-dev`.
 
 Build with `make`
 
