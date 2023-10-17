@@ -231,7 +231,7 @@ void decodeRegisters(uint16_t *rxBuffer) {
 	json_object_object_add(jobj_data,"uptime_minutes",            json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_UPTIME_MINUTES] ) );
 	json_object_object_add(jobj_data,"read_watchdog_seconds",     json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_READ_SECONDS] ) );
 	json_object_object_add(jobj_data,"write_watchdog_seconds",    json_object_new_int( rxBuffer[PZP_I2C_REG_TIME_WATCHDOG_WRITE_SECONDS] ) );
-	json_object_object_add(jobj_data,"default_paramaters_written",json_object_new_int( rxBuffer[PZP_I2C_REG_DEFAULT_PARAMS_WRITTEN] ) );
+	json_object_object_add(jobj_data,"default_parameters_written",json_object_new_int( rxBuffer[PZP_I2C_REG_DEFAULT_PARAMS_WRITTEN] ) );
 	json_object_object_add(jobj_data,"command_off_seconds",       json_object_new_int( rxBuffer[PZP_I2C_REG_COMMAND_OFF] ) );
 
 	/* put power off flags in their own sub array */
